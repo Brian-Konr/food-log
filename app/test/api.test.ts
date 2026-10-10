@@ -81,3 +81,14 @@ test('Apps Script 介面卡：text/plain、密鑰只在 body', async () => {
   assert.ok(!seen!.url.includes('s3cret'))
   assert.equal(JSON.parse(String(seen!.init.body)).secret, 's3cret-value-123456')
 })
+
+test('P1：不能補記未來的體重日期（台北時間），今天可以', async () => {
+  const storage = memoryStorage()
+  const NOW = Date.parse('2026-10-10T23:30:00+08:00')
+  const mock = createMockAdapter({ storage, now: () => NOW })
+  const api = createApi({ adapter: mock, storage, now: () => NOW })
+  await assert.rejects(api.upsertWeight({ day: '2026-10-11', kg: 70, id: 'w-future', ts: '2026-10-11T12:00:00+08:00' }), /future_day/)
+  assert.equal(api.peek()?.weights.some((w) => w.id === 'w-future') ?? false, false)
+  await api.upsertWeight({ day: '2026-10-10', kg: 70, id: 'w-today', ts: taipeiIso(NOW) })
+  assert.equal(api.peek()?.weights.some((w) => w.id === 'w-today'), true)
+})

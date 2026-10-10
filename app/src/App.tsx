@@ -308,7 +308,7 @@ export default function App(props: AppProps = {}) {
         onSave={({ day, kg, overwrite, prevKg }) => {
           const id = uuid()
           const ts = day === today ? taipeiIso(now()) : `${day}T12:00:00+08:00`
-          void fl.api?.upsertWeight({ day, kg, id, ts })
+          void fl.api?.upsertWeight({ day, kg, id, ts }).catch(() => {})
           setWeightOpen(false)
           closeWeight(false)
           showToast(`已記錄 ${kg.toFixed(1)} kg（${day.slice(5, 7).replace(/^0/, '')}/${day.slice(8, 10).replace(/^0/, '')}）`, () => {

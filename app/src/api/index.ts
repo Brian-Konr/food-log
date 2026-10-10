@@ -1,6 +1,6 @@
 // 資料層：畫面只跟這裡講話。所有寫入先進待送佇列，再依序送出。
 import type { ItemRecord, LogRecord, Snapshot, WeightRecord } from '@/types'
-import { taipeiIso } from '@/lib/day'
+import { taipeiIso, taipeiToday } from '@/lib/day'
 import { DEFAULT_CONFIG } from '@/data/defaults'
 import { NetworkError, PERMANENT_ERRORS, ServerError } from './errors'
 import type { Adapter, Response, WriteOp } from './types'
@@ -176,7 +176,11 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
     restore(table: 'Logs' | 'Weights' | 'Items', id: string) { return write({ action: 'restore', table, id }) },
     setConfig(key: string, value: string) { return write({ action: 'setConfig', key, value }) },
     upsertItem(record: ItemRecord) { return write({ action: 'upsertItem', record }) },
-    upsertWeight(record: Pick<WeightRecord, 'day' | 'kg' | 'id' | 'ts'>) { return write({ action: 'upsertWeight', record }) },
+    upsertWeight(record: Pick<WeightRecord, 'day' | 'kg' | 'id' | 'ts'>) {
+      // 不能補記未來的日期（台北時間）；後端也會擋
+      if (record.day > taipeiToday(now())) return Promise.reject(new Error('future_day'))
+      return write({ action: 'upsertWeight', record })
+    },
 
     dismissFailed() { putList(K.failed, []); emit() },
     async retryFailed() {

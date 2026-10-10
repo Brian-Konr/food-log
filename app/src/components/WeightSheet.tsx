@@ -25,7 +25,7 @@ export function WeightSheet(props: {
   const latest = useMemo(() => [...live.values()].sort((a, b) => b.day.localeCompare(a.day))[0] ?? null, [live])
   const [day, setDay] = useState(props.today)
   const [kg, setKg] = useState<number | null>(null)
-  const [editing, setEditing] = useState(false)
+  const [, setEditing] = useState(false)
   const [showDate, setShowDate] = useState(false)
   const [raw, setRaw] = useState('')
   const hold = useRef<number | null>(null)
@@ -86,17 +86,20 @@ export function WeightSheet(props: {
           {day !== props.today && <p className="text-muted-foreground">補記 {formatShortDate(day)}</p>}
           <div className="mt-3 flex min-h-11 items-center justify-between">
             <span>日期</span>
-            <button type="button" className="min-h-11" onClick={() => setShowDate(true)}>今天 {formatShortDate(day)} ›</button>
+            <button type="button" className="min-h-11" onClick={() => setShowDate(true)}>{day === props.today ? '今天 ' : ''}{formatShortDate(day)} ›</button>
           </div>
           {showDate && (
-            <input type="date" max={props.today} value={day} onChange={(e) => setDay(e.target.value)} className="mt-2 h-12 w-full rounded-xl border border-input px-3" />
+            <input type="date" max={props.today} value={day} onChange={(e) => { const v = e.target.value; if (v && v <= props.today) setDay(v) }} className="mt-2 h-12 w-full rounded-xl border border-input px-3" />
           )}
           <div className="mt-6 flex items-center justify-center gap-4">
             <button type="button" className="size-16 rounded-full bg-secondary text-2xl" onPointerDown={() => startHold(-0.1)}>−</button>
-            {editing ? (
-              <input
+            <input
                 inputMode="decimal"
-                className="w-32 text-center text-[56px] font-bold tnum outline-none"
+                aria-label="體重（kg）"
+                placeholder="—"
+                onFocus={() => setEditing(true)}
+                onBlur={() => setEditing(false)}
+                className="w-36 bg-transparent text-center text-[56px] font-bold tnum outline-none placeholder:text-foreground"
                 value={raw}
                 onChange={(e) => {
                   setRaw(e.target.value)
@@ -104,11 +107,6 @@ export function WeightSheet(props: {
                   setKg(Number.isFinite(n) ? n : null)
                 }}
               />
-            ) : (
-              <button type="button" className="min-w-32 text-[56px] font-bold tnum" onClick={() => setEditing(true)}>
-                {kg == null ? '—' : formatKg(kg)}
-              </button>
-            )}
             <button type="button" className="size-16 rounded-full bg-secondary text-2xl" onPointerDown={() => startHold(0.1)}>＋</button>
           </div>
           {!valid && kg != null && <p className="mt-2 text-center text-destructive">請輸入 30 到 250 之間的數字</p>}
@@ -117,7 +115,7 @@ export function WeightSheet(props: {
             type="button"
             disabled={!valid}
             className={cn('mt-4 h-14 w-full rounded-[28px] text-lg font-bold', valid ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground')}
-            onClick={() => valid && kg != null && props.onSave({ day, kg, overwrite: !!existing, prevKg: existing?.kg ?? null })}
+            onClick={() => valid && kg != null && day <= props.today && props.onSave({ day, kg, overwrite: !!existing, prevKg: existing?.kg ?? null })}
           >
             {btn}
           </button>

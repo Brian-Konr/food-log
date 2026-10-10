@@ -35,3 +35,10 @@ test('fixture xml/json 解析、空白 kcal 被丟、同名留第一筆、sha1 �
   const ids = cat.items.map((i: { id: string }) => i.id)
   expect([...ids].sort()).toEqual(ids)
 })
+
+test('parseSevenXml 接受帶屬性的 <Item>（真的 7-11 XML 長這樣）', async () => {
+  const { parseSevenXml } = await import('../scripts/build-catalog.mjs')
+  const xml = '<BD><Item IType="images/a.png"  onMobile="0"  ><name>飯糰</name><kcal>210</kcal></Item></BD>'
+  const items = parseSevenXml(xml)
+  if (items.length !== 1 || items[0].name !== '飯糰' || items[0].kcal !== '210') throw new Error(JSON.stringify(items))
+})

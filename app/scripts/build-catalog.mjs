@@ -63,7 +63,7 @@ export function buildFamilyMart(listDoc, detailsMap) {
 
 export function parseSevenXml(xmlText) {
   const items = []
-  const re = /<Item>([\s\S]*?)<\/Item>/g
+  const re = /<Item\b[^>]*>([\s\S]*?)<\/Item>/g
   let m
   while ((m = re.exec(xmlText))) {
     const block = m[1]
