@@ -1,0 +1,57 @@
+{
+  "version": "fixture",
+  "items": [
+    {
+      "id": "fm:1032099",
+      "src": "familymart",
+      "name": "法式香草嫩雞胸",
+      "cat": "小菜、滷味、湯品",
+      "serving": "1 份（100 g）",
+      "servingG": 100,
+      "perPack": 1,
+      "kcal": 106,
+      "protein": 20.8,
+      "fat": 1.5,
+      "carb": 2.3
+    },
+    {
+      "id": "711:89f35c5c37",
+      "src": "711",
+      "name": "晶英-麻辣奶油鮮蝦義大利麵",
+      "cat": "鮮食",
+      "serving": "1 份",
+      "servingG": null,
+      "perPack": 1,
+      "kcal": 586,
+      "protein": null,
+      "fat": null,
+      "carb": null
+    },
+    {
+      "id": "fm:soymilk01",
+      "src": "familymart",
+      "name": "無糖豆漿",
+      "cat": "飲料",
+      "serving": "1 份（400 g）",
+      "servingG": 400,
+      "perPack": 1,
+      "kcal": 132,
+      "protein": 12.6,
+      "fat": 4.2,
+      "carb": 8.0
+    },
+    {
+      "id": "711:8d0f8d6cb9",
+      "src": "711",
+      "name": "原味雞胸肉",
+      "cat": "鮮食",
+      "serving": "1 份",
+      "servingG": null,
+      "perPack": 1,
+      "kcal": 136,
+      "protein": null,
+      "fat": null,
+      "carb": null
+    }
+  ]
+}

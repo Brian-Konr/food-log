@@ -1,0 +1,43 @@
+{
+  "name": "food-log",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "food-log PWA（Vite + React + TS + Tailwind v4；後端 Apps Script）",
+  "scripts": {
+    "sync-tokens": "node scripts/sync-tokens.mjs",
+    "predev": "node scripts/sync-tokens.mjs",
+    "dev": "vite --host",
+    "prebuild": "node scripts/sync-tokens.mjs",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host",
+    "test": "vitest run",
+    "typecheck": "tsc -b",
+    "build:gas": "node scripts/build-gas.mjs",
+    "build:catalog": "node scripts/build-catalog.mjs"
+  },
+  "dependencies": {
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.48.0",
+    "radix-ui": "^1.6.7",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tailwind-merge": "^3.7.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^26.6.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "jsdom": "^26.1.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^5.0.2"
+  }
+}

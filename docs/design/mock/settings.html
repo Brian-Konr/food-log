@@ -1,0 +1,48 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>food-log mock（示意）</title><style>*{box-sizing:border-box;margin:0}body{width:390px;height:844px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang TC',system-ui,sans-serif;color:#F4F4F2;background:#0B0B0C;font-size:16px;line-height:1.45;-webkit-font-smoothing:antialiased;position:relative}
+  .num{font-variant-numeric:tabular-nums}.mu{color:#A3A3A0}
+  .sb{height:47px;display:flex;justify-content:space-between;align-items:center;padding:0 28px;font-weight:600}
+  .top{padding:4px 16px 12px;display:flex;justify-content:space-between;align-items:center}
+  .demo{font-weight:600;color:#F2C46B;border:1.5px solid #F2C46B;border-radius:999px;padding:0 10px;line-height:28px}
+  .card{background:#161618;border:1px solid #2A2A2D;border-radius:22px;margin:0 16px}
+  .sum{padding:20px}.eb{color:#A3A3A0;font-weight:600}
+  .big{display:flex;align-items:baseline;gap:8px}.big b{font-size:52px;font-weight:700;letter-spacing:-1.5px;line-height:1.1}
+  .big2{display:flex;align-items:baseline;gap:8px;margin-bottom:16px}.big2 b{font-size:28px;color:#D4F36A}
+  .bar+.bar{margin-top:10px}.bl{display:flex;justify-content:space-between;font-weight:500}
+  .trk{height:6px;border-radius:99px;background:#2A2A2D;overflow:hidden;margin-top:4px}.fill{height:100%;border-radius:99px}
+  .over{color:#F2C46B;font-weight:600}
+  .sec{display:flex;justify-content:space-between;align-items:center;padding:20px 32px 8px}.sec h2{font-size:20px}
+  .row{display:flex;gap:12px;align-items:center;min-height:60px;padding:8px 16px;border-bottom:1px solid #2A2A2D}.row:last-child{border-bottom:0}
+  .rt{width:46px}.rm{flex:1;min-width:0}.rn{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rs{color:#A3A3A0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rk{text-align:right;white-space:nowrap}
+  .tag{color:#F2C46B;font-weight:600}
+  .tab{position:absolute;left:0;right:0;bottom:0;height:83px;padding-bottom:34px;display:flex;justify-content:space-around;align-items:center;background:#161618F0;border-top:.5px solid #2A2A2D}
+  .tab div{min-width:64px;min-height:44px;display:flex;align-items:center;justify-content:center;color:#A3A3A0;font-weight:500}.tab .on{color:#D4F36A;font-weight:700}
+  .dock{position:absolute;left:0;right:0;bottom:83px;padding:14px 16px 10px;background:linear-gradient(to top,#0B0B0C 75%,#0B0B0C00)}
+  .chips{display:flex;gap:8px;overflow:hidden;margin-bottom:10px}.chip{flex:none;height:44px;padding:0 14px;border-radius:22px;display:flex;align-items:center;gap:6px;font-weight:600;background:#161618;border:1px solid #2A2A2D}
+  .field{display:flex;align-items:center;gap:8px;height:48px;border-radius:24px;background:#232326;padding:0 16px;color:#A3A3A0}.field .q{color:#F4F4F2;flex:1}.field i{display:inline-block;width:2px;height:20px;background:#D4F36A;vertical-align:middle}
+  .toast{position:absolute;left:16px;right:16px;min-height:56px;border-radius:14px;background:#F4F4F2;color:#0B0B0C;display:flex;align-items:center;justify-content:space-between;padding:0 6px 0 16px;font-weight:500;box-shadow:0 8px 24px rgba(0,0,0,.4)}.toast b{color:#3F6E00;min-width:64px;min-height:44px;display:flex;align-items:center;justify-content:center}
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.62)}
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:#1C1C1F;border-radius:16px 16px 0 0;border-top:1px solid #2A2A2D}
+  .grab{width:36px;height:5px;border-radius:3px;background:#7E7E7A;margin:8px auto 8px}
+  .fchip{height:44px;padding:0 16px;border-radius:22px;border:1px solid #2A2A2D;display:flex;align-items:center;font-weight:500;flex:none}.fchip.on{background:#F4F4F2;color:#0B0B0C;border-color:#F4F4F2}
+  .lab{padding:14px 16px 4px;color:#A3A3A0;font-weight:600}
+  .seg{display:flex;gap:8px}.seg div{flex:1;height:48px;border-radius:12px;border:1px solid #2A2A2D;display:flex;align-items:center;justify-content:center;font-weight:600}.seg .on{background:#D4F36A;color:#0B0B0C;border-color:#D4F36A}
+  .btn{height:56px;border-radius:28px;background:#D4F36A;color:#0B0B0C;font-weight:700;font-size:18px;display:flex;align-items:center;justify-content:center}
+  .mac{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0 18px}.mac div{background:#232326;border-radius:12px;padding:8px 10px}.mac b{display:block;font-size:18px}
+  </style></head><body><style>
+.h1{font-size:34px;font-weight:700;line-height:1.2}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 16px}.kpi{background:#161618;border:1px solid #2A2A2D;border-radius:16px;padding:10px 12px}.kpi b{display:block;font-size:22px;font-weight:700;line-height:1.3}
+.ct{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}.ct h2{font-size:18px}
+.lg{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px}.lg span{display:flex;align-items:center;gap:6px}
+.fld label{display:block;font-weight:600;margin:12px 0 6px}.inp{height:48px;border-radius:12px;border:1.5px solid #7E7E7A;display:flex;align-items:center;justify-content:space-between;padding:0 14px;background:#0B0B0C}.inp.f{border-color:#D4F36A;border-width:2px}.ph{color:#A3A3A0}
+.btn.dis{background:#232326;color:#A3A3A0}
+.grp{background:#161618;border:1px solid #2A2A2D;border-radius:16px;margin:0 16px}.gi{display:flex;justify-content:space-between;align-items:center;min-height:52px;padding:0 16px;border-bottom:1px solid #2A2A2D}.gi:last-child{border:0}
+.gh{padding:18px 32px 6px;color:#A3A3A0;font-weight:600}.help{padding:6px 32px 0;color:#A3A3A0}
+.stp{width:64px;height:64px;border-radius:32px;background:#232326;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:600}
+</style><div class="sb"><span class="num">9:41</span><span>●●● ▮</span></div><div class="top" style="padding-bottom:4px"><span class="h1">設定</span><span class="demo">示意</span></div>
+<div class="gh">每日目標</div><div class="grp num"><div class="gi"><span>熱量</span><span class="mu">2,200 kcal ›</span></div><div class="gi"><span>蛋白質</span><span class="mu">160 g ›</span></div><div class="gi"><span>碳水</span><span class="mu">240 g ›</span></div><div class="gi"><span>脂肪</span><span class="mu">65 g ›</span></div></div>
+<div class="gh">每日消耗</div><div style="margin:0 16px" class="fld num"><div class="inp f"><span>2,650</span><span class="mu">kcal</span></div></div>
+<div class="help">InBody 的基礎代謝 × 活動量估算，可以自己改。趨勢頁用它算赤字（每日消耗 − 攝取）。</div>
+<div class="help num" style="color:#F4F4F2;font-weight:500">比熱量目標少 450 kcal，代表每天的預期赤字約 450 kcal。</div>
+<div class="gh">提醒（Kyujin 傳訊息）</div><div class="grp num"><div class="gi"><span>記錄餐點</span><span class="mu">12:00、19:00 ›</span></div><div class="gi"><span>量體重</span><span class="mu">07:30 ›</span></div></div>
+<div class="gh">外觀</div><div class="grp"><div class="gi"><span>深色（預設）</span><span style="color:#D4F36A;font-weight:700">✓</span></div><div class="gi"><span>淺色</span><span></span></div></div>
+<div class="tab"><div>今天</div><div>趨勢</div><div>品項</div><div class="on">設定</div></div></body></html>

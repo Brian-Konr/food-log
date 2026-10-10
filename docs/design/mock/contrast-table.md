@@ -1,0 +1,34 @@
+| 組合 | 深色（預設） | 比值 | 淺色 | 比值 | 門檻 |
+|---|---|---|---|---|---|
+| `foreground` / `card` | `#F4F4F2`/`#161618` | 16.41 | `#111111`/`#FFFFFF` | 18.88 | 4.5 |
+| `foreground` / `background` | `#F4F4F2`/`#0B0B0C` | 17.86 | `#111111`/`#F5F5F3` | 17.30 | 4.5 |
+| `foreground` / `popover` | `#F4F4F2`/`#1C1C1F` | 15.44 | `#111111`/`#FFFFFF` | 18.88 | 4.5 |
+| `muted_fg` / `card` | `#A3A3A0`/`#161618` | 7.15 | `#5E5E5B`/`#FFFFFF` | 6.51 | 4.5 |
+| `muted_fg` / `background` | `#A3A3A0`/`#0B0B0C` | 7.78 | `#5E5E5B`/`#F5F5F3` | 5.96 | 4.5 |
+| `muted_fg` / `popover` | `#A3A3A0`/`#1C1C1F` | 6.72 | `#5E5E5B`/`#FFFFFF` | 6.51 | 4.5 |
+| `muted_fg` / `secondary` | `#A3A3A0`/`#232326` | 6.20 | `#5E5E5B`/`#EDEDEA` | 5.55 | 4.5 |
+| `primary_fg` / `primary` | `#0B0B0C`/`#D4F36A` | 15.77 | `#FFFFFF`/`#111111` | 18.88 | 4.5 |
+| `protein` / `card` | `#D4F36A`/`#161618` | 14.48 | `#3F6E00`/`#FFFFFF` | 6.10 | 4.5 |
+| `over` / `card` | `#F2C46B`/`#161618` | 11.09 | `#7A5200`/`#FFFFFF` | 6.92 | 4.5 |
+| `over` / `popover` | `#F2C46B`/`#1C1C1F` | 10.43 | `#7A5200`/`#FFFFFF` | 6.92 | 4.5 |
+| `toast_fg` / `toast` | `#0B0B0C`/`#F4F4F2` | 17.86 | `#FFFFFF`/`#111111` | 18.88 | 4.5 |
+| `toast_action` / `toast` | `#3F6E00`/`#F4F4F2` | 5.54 | `#D4F36A`/`#111111` | 15.13 | 4.5 |
+| `destructive` / `card` | `#FF8B7D`/`#161618` | 7.95 | `#B3261E`/`#FFFFFF` | 6.54 | 4.5 |
+| `input` / `popover` | `#7E7E7A`/`#1C1C1F` | 4.17 | `#85857F`/`#FFFFFF` | 3.71 | 3 |
+| `ring` / `background` | `#D4F36A`/`#0B0B0C` | 15.77 | `#3F6E00`/`#F5F5F3` | 5.59 | 3 |
+| `kcal` / `track` | `#F4F4F2`/`#2A2A2D` | 12.99 | `#111111`/`#E8E8E4` | 15.37 | 3 |
+| `kcal` / `card` | `#F4F4F2`/`#161618` | 16.41 | `#111111`/`#FFFFFF` | 18.88 | 3 |
+| `protein` / `track` | `#D4F36A`/`#2A2A2D` | 11.47 | `#3F6E00`/`#E8E8E4` | 4.97 | 3 |
+| `protein` / `card` | `#D4F36A`/`#161618` | 14.48 | `#3F6E00`/`#FFFFFF` | 6.10 | 3 |
+| `carb` / `track` | `#9E9E9A`/`#2A2A2D` | 5.32 | `#5A5A55`/`#E8E8E4` | 5.64 | 3 |
+| `carb` / `card` | `#9E9E9A`/`#161618` | 6.72 | `#5A5A55`/`#FFFFFF` | 6.93 | 3 |
+| `fat` / `track` | `#7E7E7A`/`#2A2A2D` | 3.51 | `#85857F`/`#E8E8E4` | 3.02 | 3 |
+| `fat` / `card` | `#7E7E7A`/`#161618` | 4.43 | `#85857F`/`#FFFFFF` | 3.71 | 3 |
+| `over` / `track` | `#F2C46B`/`#2A2A2D` | 8.78 | `#7A5200`/`#E8E8E4` | 5.63 | 3 |
+| `over` / `card` | `#F2C46B`/`#161618` | 11.09 | `#7A5200`/`#FFFFFF` | 6.92 | 3 |
+| `chart_bar` / `card` | `#9E9E9A`/`#161618` | 6.72 | `#5A5A55`/`#FFFFFF` | 6.93 | 3 |
+| `chart_goal` / `card` | `#F4F4F2`/`#161618` | 16.41 | `#111111`/`#FFFFFF` | 18.88 | 3 |
+| `chart_hatch` / `card` | `#7E7E7A`/`#161618` | 4.43 | `#85857F`/`#FFFFFF` | 3.71 | 3 |
+| `chart_weight` / `card` | `#A3A3A0`/`#161618` | 7.15 | `#5E5E5B`/`#FFFFFF` | 6.51 | 3 |
+| `chart_avg` / `card` | `#D4F36A`/`#161618` | 14.48 | `#3F6E00`/`#FFFFFF` | 6.10 | 3 |
+| `chart_expected` / `card` | `#F2C46B`/`#161618` | 11.09 | `#7A5200`/`#FFFFFF` | 6.92 | 3 |

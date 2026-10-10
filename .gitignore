@@ -1,0 +1,8 @@
+node_modules/
+app/dist/
+app/screens/
+*.local
+.env*
+docs/plans/*.log
+/qa-v1/
+/design/
