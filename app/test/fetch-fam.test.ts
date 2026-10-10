@@ -1,5 +1,4 @@
 import { expect, test } from 'vitest'
-// @ts-expect-error plain .mjs script
 import { nutrientsFromDetail } from '../scripts/fetch-fam-details.mjs'
 
 test('nutrientsFromDetail 讀全家 QueryFsProductByItem 的巢狀 LIST[0].NUTRIENTS', () => {
