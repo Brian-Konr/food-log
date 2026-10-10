@@ -7,7 +7,7 @@ const per = { kcal: 106, protein: 20.8, fat: 1.5, carb: 2.3 }
 function log(partial: Partial<LogRecord>): LogRecord {
   return {
     id: '1', ts: '2026-10-10T12:00:00+08:00', deleted: false, updated_at: '', day: '2026-10-10',
-    item_id: 'x', name: 'x', src: '全家', qty: 1, grams: null, kcal: 0, protein: 0, fat: 0, carb: 0, ...partial,
+    item_id: 'x', name: 'x', src: '全家', qty: 1, grams: null, kcal: 0, protein: 0, fat: 0, carb: 0, source: 'app', store: '', ...partial,
   }
 }
 

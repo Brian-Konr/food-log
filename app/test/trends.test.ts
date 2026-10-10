@@ -9,7 +9,7 @@ const CFG = { target_kcal: '2000', target_protein: '150', target_fat: '60', targ
 function L(day: string, kcal: number, protein = 0, extra: Partial<LogRecord> = {}): LogRecord {
   return {
     id: extra.id ?? `${day}-${kcal}-${Math.random()}`, ts: `${day}T12:00:00+08:00`, deleted: false, updated_at: `${day}T12:00:00+08:00`,
-    day, item_id: 'x', name: 'x', src: '全家', qty: 1, grams: null, kcal, protein, fat: 0, carb: 0, ...extra,
+    day, item_id: 'x', name: 'x', src: '全家', qty: 1, grams: null, kcal, protein, fat: 0, carb: 0, source: 'app', store: '', ...extra,
   }
 }
 function W(day: string, kg: number, updated_at = `${day}T08:00:00+08:00`, extra: Partial<WeightRecord> = {}): WeightRecord {

@@ -106,6 +106,17 @@ export function loadGas(opts: { lockBusy?: boolean } = {}) {
   for (const f of ['Schema.gs', 'Setup.gs', 'Code.gs', 'Trends.gs']) {
     vm.runInContext(readFileSync(resolve(import.meta.dirname, '../gas', f), 'utf8'), ctx, { filename: f })
   }
+  // ISO timestamps are second-precision; bump nowIso_ so sequential API calls
+  // get distinct updated_at (restore cascade matches that value).
+  vm.runInContext(`
+    (function () {
+      var t = Date.now();
+      nowIso_ = function () {
+        t += 1000;
+        return taipeiIso_(t);
+      };
+    })();
+  `, ctx)
   const g = ctx as any
   const post = (body: unknown) => JSON.parse(g.doPost({ postData: { contents: typeof body === 'string' ? body : JSON.stringify(body) } }).body)
   const get = (parameter: Record<string, string>) => JSON.parse(g.doGet({ parameter }).body)

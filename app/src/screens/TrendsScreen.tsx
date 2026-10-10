@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { LogRecord, WeightRecord } from '@/types'
+import type { LoadState } from '@/data/loadstate'
 import { addDays, weekStart } from '@/lib/day'
 import { formatInt, formatKg, formatShortDate } from '@/lib/format'
 import { parseTargets } from '@/lib/nutrition'
@@ -7,6 +8,8 @@ import { trendsView } from '@/lib/trends'
 import { TrendKpi } from '@/components/TrendKpi'
 import { KcalBarChart } from '@/components/KcalBarChart'
 import { WeightChart } from '@/components/WeightChart'
+import { SyncBadge } from '@/components/SyncBadge'
+import { SkeletonBlock } from '@/components/SkeletonBlock'
 
 export function TrendsScreen(props: {
   today: string
@@ -14,6 +17,13 @@ export function TrendsScreen(props: {
   weights: WeightRecord[]
   config: Record<string, string>
   onWeight: () => void
+  loadState: LoadState
+  pending: number
+  online: boolean
+  onRetry: () => void
+  retrying?: boolean
+  staleToday?: boolean
+  weightFail?: { kg: number; onRetry: () => void } | null
 }) {
   const thisMon = weekStart(props.today)
   const oldest = addDays(thisMon, -21)
@@ -44,18 +54,28 @@ export function TrendsScreen(props: {
 
   return (
     <div className="mx-auto w-full max-w-xl px-4 pb-[calc(var(--tabbar-h)+var(--safe-bottom)+16px)] pt-2">
-      <div className="flex items-start justify-between">
+      <div className="sticky top-0 z-20 flex items-start justify-between bg-background">
         <div>
           <h1 className="text-[34px] font-bold">趨勢</h1>
           <p className="text-muted-foreground">{range}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
+          <SyncBadge loadState={props.loadState} pending={props.pending} online={props.online} onRetry={props.onRetry} retrying={props.retrying} />
           <button type="button" className="h-11 px-2" disabled={!canPrev} onClick={() => setMon(addDays(mon, -7))}>‹ 上週</button>
           {!isThis && <button type="button" className="h-11 px-2" disabled={!canNext} onClick={() => setMon(addDays(mon, 7))}>下週 ›</button>}
         </div>
       </div>
 
-      {view.insufficient ? (
+      {(props.loadState === 'skeleton' || props.loadState === 'error-empty') ? (
+        <div className="mt-4" aria-busy="true">
+          <div className="grid grid-cols-3 gap-2">
+            <SkeletonBlock className="h-16 w-full" announce />
+            <SkeletonBlock className="h-16 w-full" />
+            <SkeletonBlock className="h-16 w-full" />
+          </div>
+          <div className="mt-6 h-40 rounded-[var(--radius)] bg-muted" />
+        </div>
+      ) : view.insufficient ? (
         <p className="mt-6 text-muted-foreground">還沒有足夠的紀錄，記滿 3 天就會出現趨勢。</p>
       ) : (
         <>
@@ -69,7 +89,7 @@ export function TrendsScreen(props: {
           {(props.config.tdee ?? '') === '' && <p className="mt-1 text-muted-foreground">先到設定填每日消耗，就能看到赤字</p>}
           <section className="mt-6 rounded-[var(--radius)] border border-border bg-card p-4">
           <h2 className="font-bold">每日熱量・近 4 週</h2>
-          <KcalBarChart slots={view.slots} target={targets.kcal} summary={summary} incompleteN={view.chartIncompleteN} />
+          <KcalBarChart slots={view.slots} target={targets.kcal} summary={summary} incompleteN={view.chartIncompleteN} maskDay={props.staleToday ? props.today : undefined} />
           <p className="mt-2 flex items-center gap-2 text-muted-foreground" aria-hidden="true">
             <span className="inline-block w-5 border-t-2 border-dashed border-[var(--chart-goal)]" />目標 {formatInt(targets.kcal)} kcal
           </p>
@@ -81,7 +101,7 @@ export function TrendsScreen(props: {
                 {view.slots.map((sl) => (
                   <tr key={sl.day}>
                     <td>{formatShortDate(sl.day)}</td>
-                    <td className="tnum">{sl.slot === 'future' ? '—' : formatInt(sl.kcal)}</td>
+                    <td className="tnum">{sl.day === props.today && props.staleToday ? '同步後顯示' : sl.slot === 'future' ? '—' : formatInt(sl.kcal)}</td>
                     <td className="tnum">{sl.slot === 'future' ? '—' : sl.protein}</td>
                     <td>{sl.slot === 'incomplete' ? '不完整' : sl.slot === 'complete' ? '完整' : sl.slot === 'today' ? '今天' : '—'}</td>
                     <td className="tnum">{sl.kg == null ? '—' : formatKg(sl.kg)}</td>
@@ -98,7 +118,12 @@ export function TrendsScreen(props: {
         <section className="mt-8 rounded-[var(--radius)] border border-border bg-card p-4">
           <div className="flex items-center justify-between">
             <h2 className="font-bold">體重</h2>
-            <button type="button" className="h-11 px-2" onClick={props.onWeight}>＋ 記體重</button>
+            <div className="flex items-center gap-2">
+              {props.weightFail && (
+                <button type="button" className="text-destructive" onClick={props.weightFail.onRetry}>{formatKg(props.weightFail.kg)} kg 沒有存到 · 重試</button>
+              )}
+              <button type="button" className="h-11 px-2" onClick={props.onWeight}>＋ 記體重</button>
+            </div>
           </div>
           <div className="text-[34px] font-bold tnum">{w.endAvg == null ? '—' : formatKg(w.endAvg)} kg</div>
           <p className="text-muted-foreground">7 日平均，4 週{deltaWord(w.deltaKg)}</p>

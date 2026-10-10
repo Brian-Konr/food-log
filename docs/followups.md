@@ -14,3 +14,10 @@
 - 待真機驗證：iOS Safari 和加到主畫面的 PWA（safe area、日期選擇器、鍵盤會不會擋住）、VoiceOver、從編輯 Sheet 刪除紀錄、編輯自建品項。
 
 - （Ningning，2026-10-10）體重 Sheet 補記選完日期後按 Esc 關不掉（e2e 改用重新整理繞過），待查是 app 還是測試工具的行為。
+
+# 下一輪 grok（Kazuha 2026-10-11）
+- deploy-gas.sh：DEPLOY_ID="${FOODLOG_DEPLOY_ID:-AKfycbzkkNiqeHeFF7i0qgC8V8vTApGuvLgCgobEsDI_63c1ZUpftEf2tqYCjO57L64nlqwffQ}"，不要再自動偵測。
+- deploy-gas.sh：執行任何 clasp 指令（包括 deployments）之前，都要先 cd "$CLASP_DIR"。
+- 預設帶入 deploy/gas-url，讓使用者只需要填密鑰。
+- 店家 Sheet 品項第二行拿掉「店家 ·」，只留「上次 10/11 · 1 份」。（Winter P2）
+- 確認「Kyujin麵」12:30 的時間是 e2e 假資料還是時區錯誤；如果是時區錯誤，升級為 P1。

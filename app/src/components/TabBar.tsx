@@ -22,6 +22,7 @@ export function TabBar(props: { tab: Tab; onChange: (t: Tab) => void }) {
             type="button"
             aria-current={on ? 'page' : undefined}
             onClick={() => props.onChange(t.id)}
+            aria-label={t.label}
             className={cn('flex min-h-11 min-w-16 items-center justify-center', on ? 'font-bold text-primary' : 'font-medium text-muted-foreground')}
           >
             {t.label}

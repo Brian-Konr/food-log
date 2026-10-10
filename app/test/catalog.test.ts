@@ -14,7 +14,7 @@ test('ov: 蓋掉官方數字且標籤消失，不改原始快照', () => {
   const original = structuredClone(snap)
   const ov: ItemRecord = {
     id: 'ov:711:x', ts: '', deleted: false, updated_at: '', kind: '補填', base_id: '711:x', src: '7-11',
-    name: '義大利麵', serving: '1 份', serving_g: null, kcal: 586, protein: 20, fat: 10, carb: 50, fav: false, created_by: 'app',
+    name: '義大利麵', serving: '1 份', serving_g: null, kcal: 586, protein: 20, fat: 10, carb: 50, fav: false, created_by: 'app', store: '',
   }
   const merged = mergeCatalog(snap, [ov], [])
   const pasta = merged.find((i) => i.id === '711:x')!
@@ -34,7 +34,7 @@ test('fav_ids 不產生 Items；官方收藏只在合併結果', () => {
 test('自建出現在合併結果，Kyujin 標籤', () => {
   const u: ItemRecord = {
     id: 'u:abc', ts: '', deleted: false, updated_at: '', kind: '自建', base_id: '', src: '其他',
-    name: '乳清', serving: '1 匙', serving_g: 30, kcal: 120, protein: 24, fat: 1, carb: 2, fav: true, created_by: 'kyujin',
+    name: '乳清', serving: '1 匙', serving_g: 30, kcal: 120, protein: 24, fat: 1, carb: 2, fav: true, created_by: 'kyujin', store: '',
   }
   const merged = mergeCatalog(snap, [u, { ...u, id: 'u:gone', deleted: true, name: '刪掉' }], [])
   const mine = merged.find((i) => i.id === 'u:abc')!

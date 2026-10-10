@@ -1,4 +1,4 @@
-import type { CatalogItem, ItemRecord, MergedItem, SheetSrc } from '@/types'
+import type { CatalogItem, ItemRecord, MergedItem, SheetSrc, StoreRecord } from '@/types'
 import { needsFill } from '@/lib/nutrition'
 
 export { needsFill }
@@ -17,8 +17,10 @@ export function mergeCatalog(
   snapshot: CatalogItem[],
   sheetItems: ItemRecord[],
   favIds: string[] | string = [],
+  stores: StoreRecord[] = [],
 ): MergedItem[] {
   const favSet = new Set(Array.isArray(favIds) ? favIds : parseFavIds(favIds))
+  const storeName = new Map(stores.map((s) => [s.id, s.name]))
   const live = sheetItems.filter((r) => !r.deleted)
   const overrides = new Map<string, ItemRecord>()
   const custom: ItemRecord[] = []
@@ -42,6 +44,8 @@ export function mergeCatalog(
         override: true,
         needsFill: false,
         sheetSrc: sheetSrcOf(item.src),
+        storeId: '',
+        storeName: '',
       }
     }
     return {
@@ -51,9 +55,12 @@ export function mergeCatalog(
       override: false,
       needsFill: needsFill(item),
       sheetSrc: sheetSrcOf(item.src),
+      storeId: '',
+      storeName: '',
     }
   })
   for (const r of custom) {
+    const sid = r.store || ''
     out.push({
       id: r.id,
       src: 'custom',
@@ -69,8 +76,10 @@ export function mergeCatalog(
       fav: !!r.fav,
       createdBy: r.created_by,
       override: false,
-      needsFill: needsFill(r),
+      needsFill: sid ? false : needsFill(r),
       sheetSrc: r.src,
+      storeId: sid,
+      storeName: sid ? (storeName.get(sid) ?? '') : '',
     })
   }
   return out

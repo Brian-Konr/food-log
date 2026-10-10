@@ -1,20 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LogRecord, MergedItem } from '@/types'
-import { canUseGrams, formatRemain, fromGrams, fromQty, itemMacros, lastPortion, remaining } from '@/lib/nutrition'
+import { canUseGrams, formatRemain, fromGrams, fromQty, itemMacros, lastPortion, parseNonNeg, remaining } from '@/lib/nutrition'
 import { formatMacro } from '@/lib/format'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from './ui/sheet'
 import { cn } from '@/lib/utils'
 
 const QTYS = [0.5, 1, 1.5, 2] as const
 const QTY_LABEL: Record<number, string> = { 0.5: '½', 1: '1', 1.5: '1.5', 2: '2' }
-
-function finiteNonNeg(s: string): number | null {
-  if (s.trim() === '') return null
-  if (s.includes(',')) return null
-  const n = Number(s)
-  if (!Number.isFinite(n) || n < 0) return null
-  return n
-}
 
 export function PortionSheet(props: {
   open: boolean
@@ -23,13 +15,16 @@ export function PortionSheet(props: {
   logs: LogRecord[]
   remain: { kcal: number; protein: number; fat: number; carb: number }
   targets: { kcal: number; protein: number; fat: number; carb: number }
+  todayKnown?: boolean
   onToggleFav: (item: MergedItem) => void
   onRecord: (args: {
     item: MergedItem
     qty: number
     grams: number | null
     fill?: { protein: number; fat: number; carb: number }
+    nutrition?: { kcal: number; protein: number; fat: number; carb: number }
   }) => void
+  onSaveNutrition?: (item: MergedItem, n: { kcal: number; protein: number; fat: number; carb: number }) => void
 }) {
   const item = props.item
   const needs = !!item?.needsFill
@@ -40,6 +35,11 @@ export function PortionSheet(props: {
   const [mode, setMode] = useState<'qty' | 'grams'>('qty')
   const [qty, setQty] = useState(1)
   const [grams, setGrams] = useState('')
+  const [editNut, setEditNut] = useState(false)
+  const [nKcal, setNKcal] = useState('')
+  const [nPro, setNPro] = useState('')
+  const [nFat, setNFat] = useState('')
+  const [nCarb, setNCarb] = useState('')
   const recordRef = useRef<HTMLButtonElement>(null)
   const boxRef = useRef<HTMLDivElement>(null)
 
@@ -53,6 +53,11 @@ export function PortionSheet(props: {
     } else {
       setMode('qty'); setQty(last.qty); setGrams('')
     }
+    setEditNut(false)
+    setNKcal(item.kcal != null ? String(item.kcal) : '')
+    setNPro(item.protein != null ? String(item.protein) : '')
+    setNFat(item.fat != null ? String(item.fat) : '')
+    setNCarb(item.carb != null ? String(item.carb) : '')
     // 只在打開或換品項時重設；logs 變動不能把使用者正在選的份量或打的數字清掉
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.open, item?.id])
@@ -66,17 +71,25 @@ export function PortionSheet(props: {
     return () => clearTimeout(id)
   }, [props.open, step])
 
-  const p = finiteNonNeg(protein)
-  const f = finiteNonNeg(fat)
-  const c = finiteNonNeg(carb)
+  const p = parseNonNeg(protein)
+  const f = parseNonNeg(fat)
+  const c = parseNonNeg(carb)
+  const nk = parseNonNeg(nKcal)
+  const np = parseNonNeg(nPro)
+  const nf = parseNonNeg(nFat)
+  const nc = parseNonNeg(nCarb)
+  const nutOk = nk != null && np != null && nf != null && nc != null
   const missing = [p, f, c].filter((x) => x == null).length
   const filledItem = useMemo(() => {
     if (!item) return null
+    if (editNut && nutOk) {
+      return { ...item, kcal: nk, protein: np, fat: nf, carb: nc, needsFill: false }
+    }
     if (item.needsFill && p != null && f != null && c != null) {
       return { ...item, protein: p, fat: f, carb: c, needsFill: false }
     }
     return item
-  }, [item, p, f, c])
+  }, [item, p, f, c, editNut, nutOk, nk, np, nf, nc])
 
   const macrosPer = filledItem ? itemMacros(filledItem) : null
   const gramsN = Number(grams)
@@ -100,12 +113,14 @@ export function PortionSheet(props: {
   function submit() {
     if (!item || !scaled) return
     props.onRecord({
-      item,
+      item: filledItem ?? item,
       qty: storedQty,
       grams: mode === 'grams' ? gramsN : null,
       fill: item.needsFill && p != null && f != null && c != null ? { protein: p, fat: f, carb: c } : undefined,
+      nutrition: editNut && nutOk ? { kcal: nk, protein: np, fat: nf, carb: nc } : undefined,
     })
   }
+  const todayKnown = props.todayKnown !== false
 
   return (
     <Sheet open={props.open} onOpenChange={props.onOpenChange}>
@@ -195,12 +210,36 @@ export function PortionSheet(props: {
               {mode === 'grams' && (
                 <input inputMode="decimal" className="mt-2 h-12 w-full rounded-xl border border-input px-3" value={grams} onChange={(e) => setGrams(e.target.value)} placeholder="克數" />
               )}
-              <p className={cn('mt-3', previewRemain.kcal < 0 && 'text-[var(--over)]')}>
-                {previewRemain.kcal < 0 ? `記錄後${formatRemain(previewRemain.kcal, 'kcal')}` : `記錄後還剩 ${formatRemain(previewRemain.kcal, 'kcal')} · ${formatRemain(previewRemain.protein, 'g')} 蛋白質`}
+              {item.storeId && (
+                <button type="button" className="mt-2 h-11" onClick={() => setEditNut((v) => !v)}>改營養素</button>
+              )}
+              {editNut && (
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {([['熱量', nKcal, setNKcal], ['蛋白質', nPro, setNPro], ['碳水', nCarb, setNCarb], ['脂肪', nFat, setNFat]] as const).map(([lab, v, set]) => (
+                    <label key={lab} className="block">
+                      <span>{lab}</span>
+                      <input inputMode="decimal" className="mt-1 h-11 w-full rounded-xl border border-input px-3" value={v} onChange={(e) => set(e.target.value)} />
+                    </label>
+                  ))}
+                  <button
+                    type="button"
+                    disabled={!nutOk}
+                    className="col-span-2 h-11 rounded-xl bg-secondary font-semibold"
+                    onClick={() => nutOk && filledItem && props.onSaveNutrition?.(filledItem, { kcal: nk, protein: np, fat: nf, carb: nc })}
+                  >
+                    儲存營養素
+                  </button>
+                </div>
+              )}
+              <p className={cn('mt-3', todayKnown && previewRemain.kcal < 0 && 'text-[var(--over)]')}>
+                {!todayKnown
+                  ? '同步後顯示剩餘'
+                  : previewRemain.kcal < 0 ? `記錄後${formatRemain(previewRemain.kcal, 'kcal')}` : `記錄後還剩 ${formatRemain(previewRemain.kcal, 'kcal')} · ${formatRemain(previewRemain.protein, 'g')} 蛋白質`}
               </p>
               <button
                 ref={recordRef}
                 type="button"
+                aria-label="記錄"
                 disabled={!scaled}
                 onClick={submit}
                 className="mt-3 h-14 w-full rounded-[28px] bg-primary text-lg font-bold text-primary-foreground disabled:bg-secondary disabled:text-muted-foreground"

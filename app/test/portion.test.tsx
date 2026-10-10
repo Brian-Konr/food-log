@@ -4,6 +4,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from '@/App'
 import { createMockAdapter } from '@/api/mock'
+import { memoryKv } from '@/data/kv'
 import { memoryStorage } from './helpers'
 import type { CatalogItem } from '@/types'
 
@@ -24,16 +25,17 @@ const onlyKcal: CatalogItem = {
 
 function mount(offline = true) {
   const storage = memoryStorage()
+  const kv = memoryKv()
   const adapter = createMockAdapter({ storage, now: () => NOW })
   if (offline) adapter.setOffline(true)
   const user = userEvent.setup()
-  render(<App adapter={adapter} storage={storage} catalogItems={[complete, onlyKcal]} now={() => NOW} />)
-  return { storage, adapter, user }
+  render(<App adapter={adapter} storage={storage} catalogItems={[complete, onlyKcal]} now={() => NOW} kv={kv} />)
+  return { storage, adapter, user, kv }
 }
 
 test('完整品項不會先出補營養素步', async () => {
   const { user } = mount()
-  await user.click(screen.getByRole('button', { name: '搜尋 7-11、全家、我的品項' }))
+  await user.click(screen.getByRole('button', { name: '搜尋店家、7-11、全家、我的品項' }))
   await user.type(screen.getByRole('searchbox'), '雞胸')
   await user.click(screen.getByText('法式香草嫩雞胸'))
   expect(screen.queryByText('先補上營養素')).toBeNull()
@@ -42,7 +44,7 @@ test('完整品項不會先出補營養素步', async () => {
 
 test('三欄未填「下一步」停用；填 0 可以', async () => {
   const { user } = mount()
-  await user.click(screen.getByRole('button', { name: '搜尋 7-11、全家、我的品項' }))
+  await user.click(screen.getByRole('button', { name: '搜尋店家、7-11、全家、我的品項' }))
   await user.type(screen.getByRole('searchbox'), '義大利')
   await user.click(screen.getByText('晶英-麻辣奶油鮮蝦義大利麵'))
   expect(screen.getByText('先補上營養素')).toBeTruthy()
@@ -55,17 +57,17 @@ test('三欄未填「下一步」停用；填 0 可以', async () => {
 })
 
 test('按取消或關閉後 outbox 長度仍是 0', async () => {
-  const { user, storage } = mount()
-  await user.click(screen.getByRole('button', { name: '搜尋 7-11、全家、我的品項' }))
+  const { user, kv } = mount()
+  await user.click(screen.getByRole('button', { name: '搜尋店家、7-11、全家、我的品項' }))
   await user.type(screen.getByRole('searchbox'), '義大利')
   await user.click(screen.getByText('晶英-麻辣奶油鮮蝦義大利麵'))
   await user.click(screen.getByRole('button', { name: '取消' }))
-  expect(JSON.parse(storage.getItem('foodlog.outbox') || '[]')).toHaveLength(0)
+  expect(JSON.parse(await kv.get('outbox') || '[]')).toHaveLength(0)
 })
 
 test('按記錄後 outbox 第一筆是 upsertItem（ov:）、第二筆是 append', async () => {
-  const { user, storage } = mount(true)
-  await user.click(screen.getByRole('button', { name: '搜尋 7-11、全家、我的品項' }))
+  const { user, kv } = mount(true)
+  await user.click(screen.getByRole('button', { name: '搜尋店家、7-11、全家、我的品項' }))
   await user.type(screen.getByRole('searchbox'), '義大利')
   await user.click(screen.getByText('晶英-麻辣奶油鮮蝦義大利麵'))
   const inputs = screen.getAllByPlaceholderText('必填，可以填 0')
@@ -74,8 +76,8 @@ test('按記錄後 outbox 第一筆是 upsertItem（ov:）、第二筆是 append
   await user.type(inputs[2], '0')
   await user.click(screen.getByRole('button', { name: '下一步' }))
   await user.click(screen.getByRole('button', { name: '記錄' }))
-  await waitFor(() => {
-    const box = JSON.parse(storage.getItem('foodlog.outbox') || '[]') as { action: string; record?: { id?: string } }[]
+  await waitFor(async () => {
+    const box = JSON.parse(await kv.get('outbox') || '[]') as { action: string; record?: { id?: string } }[]
     expect(box.length).toBeGreaterThanOrEqual(2)
     expect(box[0].action).toBe('upsertItem')
     expect(box[0].record?.id?.startsWith('ov:')).toBe(true)

@@ -5,3 +5,47 @@
 @media (max-height: 500px) {
   :root { --dock-h: 72px; } /* 矮畫面收起常吃膠囊，只留搜尋列 */
 }
+
+/* 100dvh + safe-area：短頁也要把 tab bar 貼齊視窗底，避免黑塊／白邊。
+   height: 100% 跟 ICB 對齊；100dvh 在支援時蓋過 100vh。body/#root 用 height:100%
+   吃 html 的明確高度，避免只有 min-height 時子層百分比算成 auto。 */
+html {
+  height: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--background);
+}
+body, #root {
+  margin: 0;
+  height: 100%;
+  min-height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--background);
+}
+
+.skeleton-shimmer { position: relative; overflow: hidden; }
+.skeleton-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--foreground) 8%, transparent), transparent);
+  animation: skeleton-shimmer 1.5s linear infinite;
+}
+@keyframes skeleton-shimmer { to { transform: translateX(100%); } }
+@keyframes sync-breathe { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+.sync-dot { animation: sync-breathe 1.2s ease-in-out infinite; }
+.fade-in { animation: fade-in 200ms ease-out; }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.row-in { animation: fade-in 250ms ease-out; }
+.row-out { opacity: 0; transition: opacity 250ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer::after { animation: none; display: none; }
+  .sync-dot { animation: none; opacity: 1; }
+  .fade-in, .row-in { animation: none; }
+  .row-out { transition: none; }
+}

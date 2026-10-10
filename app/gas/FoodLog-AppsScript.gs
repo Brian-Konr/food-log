@@ -3,16 +3,20 @@
  * food-log：Sheet 結構。這個檔案同時被 Code.gs、Setup.gs 和本機測試使用。
  */
 var SCHEMA = {
-  Items:   ['id', 'ts', 'deleted', 'updated_at', 'kind', 'base_id', 'src', 'name', 'serving', 'serving_g', 'kcal', 'protein', 'fat', 'carb', 'fav', 'created_by'],
-  Logs:    ['id', 'ts', 'deleted', 'updated_at', 'day', 'item_id', 'name', 'src', 'qty', 'grams', 'kcal', 'protein', 'fat', 'carb'],
+  Items:   ['id', 'ts', 'deleted', 'updated_at', 'kind', 'base_id', 'src', 'name', 'serving', 'serving_g', 'kcal', 'protein', 'fat', 'carb', 'fav', 'created_by', 'store'],
+  Logs:    ['id', 'ts', 'deleted', 'updated_at', 'day', 'item_id', 'name', 'src', 'qty', 'grams', 'kcal', 'protein', 'fat', 'carb', 'source', 'store'],
   Weights: ['day', 'ts', 'deleted', 'updated_at', 'kg', 'id'],
+  Stores:  ['id', 'ts', 'deleted', 'updated_at', 'name', 'last_eaten_at', 'created_by'],
   Config:  ['key', 'value', 'updated_at']
 };
 
 var LOG_TABLES = ['Logs'];
-var KEY_COL = { Items: 'id', Logs: 'id', Weights: 'day', Config: 'key' };
+var KEY_COL = { Items: 'id', Logs: 'id', Weights: 'day', Stores: 'id', Config: 'key' };
 var SRC_OK = ['7-11', '全家', '其他'];
 var OFFSET = 8 * 3600 * 1000;
+/** 寫在 Config 的 schema_version。第一次請求 migrate 完就寫入，之後跳過。不要放進 DEFAULT_CONFIG。 */
+var SCHEMA_VERSION = 2;
+var SCHEMA_VERSION_KEY = 'schema_version';
 
 /** Config 預設值（與前端 src/data/defaults.ts 相同，測試會比對）。值都是字串。沒有 theme。 */
 var DEFAULT_CONFIG = [
@@ -29,16 +33,17 @@ var DEFAULT_CONFIG = [
 // ===== Setup.gs =====
 /**
  * 一次性初始化：在「綁定在試算表上的 Apps Script」裡執行 setupFoodLog()。
- * - 建立 4 個分頁與表頭（已存在就只補缺少的欄位，不會清資料）
+ * - 建立分頁與表頭（已存在就只補缺少的欄位，不會清資料）
  * - 寫入尚不存在的 Config 預設（不覆蓋已有）
  * - 不寫示範飲食或示範體重
  * - 沒有 SHARED_SECRET 就用兩個 uuid 去掉連字號產生，並 Logger.log 一次
  * 要重新產生密鑰請執行 rotateSharedSecret()。
+ * 舊表升級請執行 migrateFoodLog()（只補分頁與欄，不碰密鑰、不補 Config）。
  * 不要 Drive 資料夾、不要 PARTNER_EMAIL。
  */
 function setupFoodLog() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  Object.keys(SCHEMA).forEach(function (name) { ensureSheet_(ss, name, SCHEMA[name]); });
+  ensureFoodLogSheets_(ss);
 
   var cfgSheet = ss.getSheetByName('Config');
   var have = {};
@@ -57,6 +62,57 @@ function setupFoodLog() {
   Logger.log('共享密鑰（請私下傳給自己和 Kazuha，第一次開 App 時輸入）：' + props.getProperty('SHARED_SECRET'));
 }
 
+function migrateFoodLog() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var report = ensureFoodLogSheets_(ss);
+  writeSchemaVersion_();
+  Logger.log(JSON.stringify(report));
+  return report;
+}
+
+function readSchemaVersion_() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Config');
+  if (!sh) return '';
+  var all = sh.getDataRange().getValues();
+  if (!all.length) return '';
+  var header = all[0];
+  var keyIdx = header.indexOf('key');
+  var valIdx = header.indexOf('value');
+  if (keyIdx < 0 || valIdx < 0) return '';
+  for (var i = 1; i < all.length; i++) {
+    if (String(all[i][keyIdx]) === SCHEMA_VERSION_KEY) return configValueToString_(all[i][valIdx]);
+  }
+  return '';
+}
+
+function writeSchemaVersion_() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Config');
+  if (!sh) return;
+  var cols = header_(sh);
+  var keyIdx = cols.indexOf('key');
+  var valIdx = cols.indexOf('value');
+  var tsIdx = cols.indexOf('updated_at');
+  if (keyIdx < 0 || valIdx < 0) return;
+  var now = nowIso_();
+  var v = String(SCHEMA_VERSION);
+  var all = sh.getDataRange().getValues();
+  for (var r = 1; r < all.length; r++) {
+    if (String(all[r][keyIdx]) === SCHEMA_VERSION_KEY) {
+      sh.getRange(r + 1, valIdx + 1).setNumberFormat('@').setValue(v);
+      if (tsIdx >= 0) sh.getRange(r + 1, tsIdx + 1).setValue(now);
+      return;
+    }
+  }
+  var row = cols.map(function (c) {
+    if (c === 'key') return SCHEMA_VERSION_KEY;
+    if (c === 'value') return v;
+    if (c === 'updated_at') return now;
+    return '';
+  });
+  sh.appendRow(row);
+  sh.getRange(sh.getLastRow(), valIdx + 1).setNumberFormat('@').setValue(v);
+}
+
 function rotateSharedSecret() {
   var s = newSecret_();
   PropertiesService.getScriptProperties().setProperty('SHARED_SECRET', s);
@@ -65,6 +121,42 @@ function rotateSharedSecret() {
 
 function newSecret_() {
   return (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
+}
+
+function formatColText_(sh, col) {
+  var n = Math.max(sh.getLastRow(), 1);
+  sh.getRange(1, col, n, 1).setNumberFormat('@');
+}
+
+function ensureFoodLogSheets_(ss) {
+  var created = [];
+  var addedColumns = { Items: [], Logs: [], Stores: [] };
+  Object.keys(SCHEMA).forEach(function (name) {
+    var cols = SCHEMA[name];
+    var existed = !!ss.getSheetByName(name);
+    var sh = existed ? ss.getSheetByName(name) : ss.insertSheet(name);
+    if (!existed) created.push(name);
+    var header = header_(sh);
+    var added = [];
+    if (header.length === 0) {
+      sh.getRange(1, 1, 1, cols.length).setValues([cols]);
+      if (name === 'Stores') {
+        for (var i = 0; i < cols.length; i++) formatColText_(sh, i + 1);
+      }
+    } else {
+      cols.forEach(function (c) {
+        if (header.indexOf(c) < 0) {
+          header.push(c);
+          sh.getRange(1, header.length).setValue(c);
+          formatColText_(sh, header.length);
+          added.push(c);
+        }
+      });
+    }
+    if (name === 'Items' || name === 'Logs' || name === 'Stores') addedColumns[name] = added;
+    sh.setFrozenRows(1);
+  });
+  return { created: created, addedColumns: addedColumns };
 }
 
 function ensureSheet_(ss, name, cols) {
@@ -118,6 +210,8 @@ function handle_(req) {
   try {
     if (req.__parseError) return fail_('bad_json', '請求內容不是合法 JSON');
     if (!checkSecret_(req.secret)) return fail_('unauthorized', '共享密鑰不正確');
+    var schemaErr = ensureSchema_();
+    if (schemaErr) return schemaErr;
     var kyujin = req.client === 'kyujin';
     switch (req.action) {
       case 'read':          return readAll_(req.since);
@@ -126,6 +220,7 @@ function handle_(req) {
       case 'softDelete':    return withLock_(function () { return softDelete_(req.table, req.id, kyujin); });
       case 'restore':       return withLock_(function () { return restore_(req.table, req.id, kyujin); });
       case 'upsertItem':    return withLock_(function () { return upsertItem_(req.record, kyujin); });
+      case 'upsertStore':   return withLock_(function () { return upsertStore_(req.record, kyujin); });
       case 'upsertWeight':  return withLock_(function () { return upsertWeight_(req.record, kyujin); });
       case 'setConfig':     return withLock_(function () { return setConfig_(req.key, req.value, kyujin); });
       case 'history':       return history_(req);
@@ -253,42 +348,141 @@ function isDeleted_(r) {
   return r.deleted === true || r.deleted === 'TRUE';
 }
 
+function assertSchema_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var stores = ss.getSheetByName('Stores');
+  var items = ss.getSheetByName('Items');
+  var logs = ss.getSheetByName('Logs');
+  if (!stores || !items || !logs) return fail_('schema_outdated', '資料表結構不完整，請在編輯器執行 migrateFoodLog');
+  var ih = header_(items);
+  var lh = header_(logs);
+  if (ih.indexOf('store') < 0 || lh.indexOf('source') < 0 || lh.indexOf('store') < 0) {
+    return fail_('schema_outdated', '資料表結構不完整，請在編輯器執行 migrateFoodLog');
+  }
+  return null;
+}
+
+/**
+ * 第一次收到請求時在 LockService 裡自動 migrate（編輯器的 migrateFoodLog 仍可用）。
+ * Config.schema_version 已是 SCHEMA_VERSION 就跳過。migrate 之前不回 schema_outdated。
+ * 只新增 Stores、往最後加欄，不改舊儲存格。
+ */
+function ensureSchema_() {
+  if (readSchemaVersion_() === String(SCHEMA_VERSION)) return null;
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(LOCK_WAIT_MS)) return fail_('busy', '後端正在更新資料表，請再試一次');
+  try {
+    if (readSchemaVersion_() !== String(SCHEMA_VERSION)) {
+      ensureFoodLogSheets_(SpreadsheetApp.getActiveSpreadsheet());
+      writeSchemaVersion_();
+      SpreadsheetApp.flush();
+    }
+  } finally {
+    lock.releaseLock();
+  }
+  return assertSchema_();
+}
+
+function normName_(s) {
+  return String(s).normalize('NFKC').toLowerCase().replace(/[\s\-·・（）()【】[\]、，。．/／]/g, '');
+}
+
+function logSourceOf_(v) {
+  return v === 'quick' || v === 'kyujin' ? v : 'app';
+}
+
+function bumpLastEaten_(storeId, ts) {
+  if (!storeId) return;
+  var store = findById_('Stores', storeId);
+  if (!store) return;
+  var prev = String(store.last_eaten_at || '');
+  var next = String(ts || '');
+  if (prev && prev >= next) return;
+  var sh = sheet_('Stores');
+  var c = header_(sh).indexOf('last_eaten_at');
+  if (c >= 0) sh.getRange(store.__row, c + 1).setValue(toCell_(next));
+}
+
+function resolveLogSource_(record, kyujin) {
+  var source = record.source;
+  if (kyujin) {
+    if (source !== 'kyujin') return fail_('forbidden', KYU_MSG);
+    return source;
+  }
+  if (source === 'kyujin') return fail_('bad_record', '不能寫 kyujin 的 source');
+  if (!source || source === '') return 'app';
+  if (source !== 'app' && source !== 'quick') return fail_('bad_record', 'source 只能是 app、quick 或 kyujin');
+  return source;
+}
+
 function appendLog_(table, record, kyujin) {
-  if (kyujin) return fail_('forbidden', KYU_MSG);
   if (table !== 'Logs') return fail_('bad_table', '這個分頁不能用 append：' + table);
   if (!record) return fail_('bad_record', '缺少 record');
-  if (!record.id || !record.ts || !record.day || !record.item_id || !record.name || !record.src || record.qty == null) {
+  if (!record.id || !record.ts || !record.day || !record.src || record.qty == null) {
     return fail_('bad_record', '缺少必填欄位');
   }
-  if (!nutritionOk_(record)) return fail_('bad_record', NUT_MSG);
-  if (typeof record.qty !== 'number' || !isFinite(record.qty) || record.qty <= 0) return fail_('bad_record', 'qty 必須是大於 0 的數字');
-  var grams = record.grams;
-  if (!(grams === undefined || grams === null || grams === '' || (typeof grams === 'number' && isFinite(grams) && grams > 0))) {
-    return fail_('bad_record', 'grams 格式不對');
+  var sourceOrErr = resolveLogSource_(record, kyujin);
+  if (sourceOrErr && sourceOrErr.ok === false) return sourceOrErr;
+  var source = sourceOrErr;
+  var itemId = record.item_id == null ? '' : String(record.item_id);
+  var name = String(record.name == null ? '' : record.name).trim();
+  var storeId = record.store == null ? '' : String(record.store);
+  if (itemId === '') {
+    if (!nutritionOk_(record)) return fail_('bad_record', NUT_MSG);
+    if (record.qty !== 1) return fail_('bad_record', 'qty 必須是大於 0 的數字');
+    var qg = record.grams;
+    if (!(qg === undefined || qg === null || qg === '')) return fail_('bad_record', 'grams 格式不對');
+    if (record.src !== '其他') return fail_('bad_record', 'src 只能是 7-11、全家或其他');
+    if (storeId) return fail_('bad_record', '找不到這家店');
+  } else {
+    if (!name) return fail_('bad_record', '缺少必填欄位');
+    if (!nutritionOk_(record)) return fail_('bad_record', NUT_MSG);
+    if (typeof record.qty !== 'number' || !isFinite(record.qty) || record.qty <= 0) return fail_('bad_record', 'qty 必須是大於 0 的數字');
+    var grams = record.grams;
+    if (!(grams === undefined || grams === null || grams === '' || (typeof grams === 'number' && isFinite(grams) && grams > 0))) {
+      return fail_('bad_record', 'grams 格式不對');
+    }
+    if (!srcOk_(record.src)) return fail_('bad_record', 'src 只能是 7-11、全家或其他');
   }
-  if (!srcOk_(record.src)) return fail_('bad_record', 'src 只能是 7-11、全家或其他');
   var day = String(record.day);
   var tsDay = taipeiDay_(record.ts);
   if (day !== tsDay) return fail_('bad_record', 'day 必須等於台北日');
   if (day > taipeiToday_()) return fail_('bad_record', '不能記未來的日期');
+  if (storeId) {
+    var st = findById_('Stores', storeId);
+    if (!st) return fail_('bad_record', '找不到這家店');
+  }
   var existing = findById_('Logs', record.id);
   if (existing) return { ok: true, duplicate: true, record: strip_(existing) };
   var sh = sheet_('Logs');
   var now = nowIso_();
+  var toWrite = {};
+  for (var k in record) toWrite[k] = record[k];
+  toWrite.item_id = itemId;
+  toWrite.name = name;
+  toWrite.source = source;
+  toWrite.store = storeId;
   var row = header_(sh).map(function (c) {
     if (c === 'deleted') return toCell_(!!record.deleted);
     if (c === 'updated_at') return now;
-    return toCell_(record[c]);
+    return toCell_(toWrite[c]);
   });
   sh.appendRow(row);
+  if (storeId) bumpLastEaten_(storeId, record.ts);
   return { ok: true, record: strip_(findById_('Logs', record.id)) };
 }
 
 function updateLog_(table, id, patch, kyujin) {
-  if (kyujin) return fail_('forbidden', KYU_MSG);
   if (table !== 'Logs') return fail_('bad_table', '這個分頁不能用 update：' + table);
   var existing = findById_('Logs', id);
+  if (kyujin) {
+    if (!existing || logSourceOf_(existing.source) !== 'kyujin') return fail_('forbidden', KYU_MSG);
+  }
   if (!existing) return fail_('not_found', '找不到這筆紀錄：' + id);
+  if (isDeleted_(existing)) return { ok: true, ignored: 'deleted' };
+  if (patch && patch.source != null && logSourceOf_(patch.source) !== logSourceOf_(existing.source)) {
+    return fail_('bad_record', '不能改 source');
+  }
   var merged = {};
   var k;
   for (k in existing) if (k !== '__row') merged[k] = existing[k];
@@ -296,6 +490,15 @@ function updateLog_(table, id, patch, kyujin) {
   Object.keys(patch || {}).forEach(function (key) {
     if (allowed[key]) merged[key] = patch[key];
   });
+  if (merged.name == null) merged.name = '';
+  else merged.name = String(merged.name).trim();
+  var origSource = logSourceOf_(existing.source);
+  var itemId = String(merged.item_id || '');
+  if (itemId === '' || origSource === 'quick') {
+    if (merged.qty !== 1) return fail_('bad_record', 'qty 必須是大於 0 的數字');
+    var qg = merged.grams;
+    if (!(qg === undefined || qg === null || qg === '')) return fail_('bad_record', 'grams 格式不對');
+  }
   if (!nutritionOk_(merged)) return fail_('bad_record', NUT_MSG);
   if (String(merged.day) !== taipeiDay_(merged.ts)) return fail_('bad_record', 'day 必須等於台北日');
   if (String(merged.day) > taipeiToday_()) return fail_('bad_record', '不能記未來的日期');
@@ -313,9 +516,16 @@ function updateLog_(table, id, patch, kyujin) {
 }
 
 function softDelete_(table, id, kyujin) {
-  if (table !== 'Logs' && table !== 'Weights' && table !== 'Items') return fail_('bad_table', table);
-  if (kyujin) return fail_('forbidden', KYU_MSG);
-  var existing = findById_(table, id);
+  if (table !== 'Logs' && table !== 'Weights' && table !== 'Items' && table !== 'Stores') return fail_('bad_table', table);
+  if (table === 'Stores' && kyujin) return fail_('forbidden', KYU_MSG);
+  if ((table === 'Weights' || table === 'Items') && kyujin) return fail_('forbidden', KYU_MSG);
+  var existing = table === 'Stores' && kyujin ? null : findById_(table, id);
+  if (table === 'Logs' && kyujin) {
+    if (!existing || logSourceOf_(existing.source) !== 'kyujin') return fail_('forbidden', KYU_MSG);
+  } else if (kyujin) {
+    return fail_('forbidden', KYU_MSG);
+  }
+  if (!existing) existing = findById_(table, id);
   if (!existing) return fail_('not_found', '找不到這筆紀錄：' + id);
   var sh = sheet_(table);
   var cols = header_(sh);
@@ -323,13 +533,32 @@ function softDelete_(table, id, kyujin) {
   sh.getRange(existing.__row, cols.indexOf('deleted') + 1).setValue('TRUE');
   var uc = cols.indexOf('updated_at');
   if (uc >= 0) sh.getRange(existing.__row, uc + 1).setValue(now);
+  if (table === 'Stores') {
+    var items = rows_('Items');
+    var itemSh = sheet_('Items');
+    var itemCols = header_(itemSh);
+    var idel = itemCols.indexOf('deleted');
+    var iuc = itemCols.indexOf('updated_at');
+    for (var i = 0; i < items.length; i++) {
+      if (String(items[i].store || '') !== String(id)) continue;
+      if (isDeleted_(items[i])) continue;
+      if (idel >= 0) itemSh.getRange(items[i].__row, idel + 1).setValue('TRUE');
+      if (iuc >= 0) itemSh.getRange(items[i].__row, iuc + 1).setValue(now);
+    }
+  }
   return { ok: true, record: strip_(findById_(table, id)) };
 }
 
 function restore_(table, id, kyujin) {
-  if (table !== 'Logs' && table !== 'Weights' && table !== 'Items') return fail_('bad_table', table);
-  if (kyujin) return fail_('forbidden', KYU_MSG);
+  if (table !== 'Logs' && table !== 'Weights' && table !== 'Items' && table !== 'Stores') return fail_('bad_table', table);
+  if (table === 'Stores' && kyujin) return fail_('forbidden', KYU_MSG);
+  if ((table === 'Weights' || table === 'Items') && kyujin) return fail_('forbidden', KYU_MSG);
   var existing = findById_(table, id);
+  if (table === 'Logs' && kyujin) {
+    if (!existing || logSourceOf_(existing.source) !== 'kyujin') return fail_('forbidden', KYU_MSG);
+  } else if (kyujin) {
+    return fail_('forbidden', KYU_MSG);
+  }
   if (!existing) return fail_('not_found', '找不到這筆紀錄：' + id);
   if (table === 'Weights') {
     var day = String(existing.day).slice(0, 10);
@@ -341,18 +570,34 @@ function restore_(table, id, kyujin) {
       }
     }
   }
+  var oldUpdated = existing.updated_at;
   var sh = sheet_(table);
   var cols = header_(sh);
   var now = nowIso_();
   sh.getRange(existing.__row, cols.indexOf('deleted') + 1).setValue('FALSE');
   var uc = cols.indexOf('updated_at');
   if (uc >= 0) sh.getRange(existing.__row, uc + 1).setValue(now);
+  if (table === 'Stores') {
+    var items = rows_('Items');
+    var itemSh = sheet_('Items');
+    var itemCols = header_(itemSh);
+    var idel = itemCols.indexOf('deleted');
+    var iuc = itemCols.indexOf('updated_at');
+    for (var j = 0; j < items.length; j++) {
+      if (String(items[j].store || '') !== String(id)) continue;
+      if (!isDeleted_(items[j])) continue;
+      if (String(items[j].updated_at) !== String(oldUpdated)) continue;
+      if (idel >= 0) itemSh.getRange(items[j].__row, idel + 1).setValue('FALSE');
+      if (iuc >= 0) itemSh.getRange(items[j].__row, iuc + 1).setValue(now);
+    }
+  }
   return { ok: true, record: strip_(findById_(table, id)) };
 }
 
 function upsertItem_(record, kyujin) {
   if (!record || !record.id) return fail_('bad_record', '缺少 id');
   var id = String(record.id);
+  var storeId = record.store == null ? '' : String(record.store);
   if (id.indexOf('fm:') === 0 || id.indexOf('711:') === 0) return fail_('forbidden', '不能改官方品項');
   if (id.indexOf('ov:') === 0) {
     if (kyujin) return fail_('forbidden', KYU_MSG);
@@ -362,9 +607,12 @@ function upsertItem_(record, kyujin) {
   } else if (id.indexOf('u:') === 0) {
     if (record.kind !== '自建') return fail_('bad_record', '自建的 kind 必須是自建');
     if (record.base_id && String(record.base_id) !== '') return fail_('bad_record', '自建的 base_id 必須空白');
-    if (kyujin) {
-      if (record.created_by !== 'kyujin') return fail_('forbidden', KYU_MSG);
+    if (storeId) {
+      if (record.src !== '其他') return fail_('bad_record', 'src 只能是 7-11、全家或其他');
+      var storeRow = findById_('Stores', storeId);
+      if (!storeRow || isDeleted_(storeRow)) return fail_('bad_record', '找不到這家店');
     }
+    if (kyujin && !storeId && record.created_by !== 'kyujin') return fail_('forbidden', KYU_MSG);
   } else {
     return fail_('bad_record', 'id 格式不對');
   }
@@ -378,18 +626,22 @@ function upsertItem_(record, kyujin) {
   if (!srcOk_(record.src)) return fail_('bad_record', 'src 只能是 7-11、全家或其他');
   if (typeof record.fav !== 'boolean') return fail_('bad_record', 'fav 必須是布林');
   var existing = findById_('Items', id);
+  if (existing && isDeleted_(existing)) return { ok: true, ignored: 'deleted' };
+  var existStore = existing ? String(existing.store || '') : '';
+  var isStoreItem = !!(storeId || existStore);
   if (kyujin) {
     if (id.indexOf('u:') !== 0) return fail_('forbidden', KYU_MSG);
-    if (existing && existing.created_by !== 'kyujin') return fail_('forbidden', KYU_MSG);
+    if (!isStoreItem && existing && existing.created_by !== 'kyujin') return fail_('forbidden', KYU_MSG);
   }
   var createdBy = record.created_by;
-  if (existing && existing.created_by === 'kyujin') createdBy = 'kyujin';
+  if (existing) createdBy = existing.created_by;
   var sh = sheet_('Items');
   var cols = header_(sh);
   var now = nowIso_();
   var toWrite = {};
   for (var k in record) toWrite[k] = record[k];
   toWrite.created_by = createdBy;
+  toWrite.store = storeId || existStore;
   toWrite.updated_at = now;
   if (!toWrite.ts) toWrite.ts = now;
   if (toWrite.deleted == null) toWrite.deleted = false;
@@ -401,6 +653,60 @@ function upsertItem_(record, kyujin) {
     sh.appendRow(cols.map(function (c) { return toCell_(toWrite[c]); }));
   }
   return { ok: true, record: strip_(findById_('Items', id)) };
+}
+
+function upsertStore_(record, kyujin) {
+  if (!record || !record.id) return fail_('bad_record', '缺少 id');
+  var id = String(record.id);
+  if (id.indexOf('s:') !== 0) return fail_('bad_record', 'id 格式不對');
+  var existing = findById_('Stores', id);
+  if (existing && isDeleted_(existing)) return { ok: true, ignored: 'deleted' };
+  var name = String(record.name == null ? '' : record.name).trim();
+  if (!name) return fail_('bad_record', '店名不能空白');
+  var all = rows_('Stores');
+  var i;
+  for (i = 0; i < all.length; i++) {
+    if (isDeleted_(all[i])) continue;
+    if (String(all[i].id) === id) continue;
+    if (normName_(all[i].name) === normName_(name)) {
+      return {
+        ok: false,
+        error: 'duplicate_name',
+        message: '已經有「' + all[i].name + '」',
+        existingId: all[i].id,
+        existingName: all[i].name
+      };
+    }
+  }
+  var createdBy;
+  if (existing) {
+    createdBy = existing.created_by;
+  } else if (kyujin) {
+    if (record.created_by !== 'kyujin') return fail_('forbidden', KYU_MSG);
+    createdBy = 'kyujin';
+  } else {
+    createdBy = 'app';
+  }
+  var sh = sheet_('Stores');
+  var cols = header_(sh);
+  var now = nowIso_();
+  var toWrite = {};
+  for (var k in record) toWrite[k] = record[k];
+  toWrite.name = name;
+  toWrite.created_by = createdBy;
+  toWrite.updated_at = now;
+  if (!toWrite.ts) toWrite.ts = now;
+  if (toWrite.deleted == null) toWrite.deleted = false;
+  if (toWrite.last_eaten_at == null) toWrite.last_eaten_at = existing ? existing.last_eaten_at : '';
+  if (existing) {
+    cols.forEach(function (c, i) {
+      if (c === 'last_eaten_at' && !('last_eaten_at' in record)) return;
+      if (c in toWrite) sh.getRange(existing.__row, i + 1).setValue(toCell_(toWrite[c]));
+    });
+  } else {
+    sh.appendRow(cols.map(function (c) { return toCell_(toWrite[c]); }));
+  }
+  return { ok: true, record: strip_(findById_('Stores', id)) };
 }
 
 function upsertWeight_(record, _kyujin) {
@@ -521,6 +827,7 @@ function readAll_(since) {
   var cutoff = dayCutoff_(today);
   var sinceDay = since ? String(since) : '';
   var items = rows_('Items').map(strip_);
+  var stores = rows_('Stores').map(strip_);
   var logs = rows_('Logs').filter(function (r) {
     var day = String(r.day || '').slice(0, 10);
     if (day < cutoff) return false;
@@ -539,6 +846,7 @@ function readAll_(since) {
     serverTime: nowIso_(),
     config: readConfig_(),
     items: items,
+    stores: stores,
     logs: logs,
     weights: weights
   };

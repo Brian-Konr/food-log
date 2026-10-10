@@ -4,3 +4,5 @@ dist
 *.local
 .env*
 docs/plans/*.log
+.clasp.json
+gas/.clasp.json

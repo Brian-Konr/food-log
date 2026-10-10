@@ -4,6 +4,15 @@ import { formatInt, formatMacro } from './format'
 export const roundKcal = (n: number) => Math.round(n)
 export const roundMacro = (n: number) => Math.round(n * 10) / 10
 
+/** 空字串、逗號、負數、NaN 回 null；0 可以。 */
+export function parseNonNeg(s: string): number | null {
+  if (s.trim() === '') return null
+  if (s.includes(',')) return null
+  const n = Number(s)
+  if (!Number.isFinite(n) || n < 0) return null
+  return n
+}
+
 export function needsFill(item: Pick<CatalogItem, 'protein' | 'fat' | 'carb'>): boolean {
   return item.protein == null || item.fat == null || item.carb == null
 }

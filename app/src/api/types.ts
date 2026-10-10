@@ -1,6 +1,6 @@
-import type { ItemRecord, LogRecord, Snapshot, WeightRecord } from '@/types'
+import type { ItemRecord, LogRecord, Snapshot, StoreRecord, WeightRecord } from '@/types'
 
-export type WriteTable = 'Logs' | 'Weights' | 'Items'
+export type WriteTable = 'Logs' | 'Weights' | 'Items' | 'Stores'
 
 export type Op =
   | { action: 'read'; since?: string }
@@ -9,6 +9,7 @@ export type Op =
   | { action: 'softDelete'; table: WriteTable; id: string }
   | { action: 'restore'; table: WriteTable; id: string }
   | { action: 'upsertItem'; record: ItemRecord }
+  | { action: 'upsertStore'; record: StoreRecord }
   | { action: 'upsertWeight'; record: Pick<WeightRecord, 'day' | 'kg' | 'id' | 'ts'> }
   | { action: 'setConfig'; key: string; value: string }
   | { action: 'history'; table: 'Logs' | 'Weights'; before: string; limit?: number }

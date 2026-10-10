@@ -21,6 +21,14 @@ export function formatLongDate(day: string): string {
   return `${m}月${d}日 星期${WEEKDAYS[wd]}`
 }
 
+/** 10/9 — 取前 10 碼，月/日不補零。店家品項列第二行用。 */
+export function formatMd(isoOrDay: string): string {
+  const day = String(isoOrDay).slice(0, 10)
+  const [, m, d] = day.split('-').map(Number)
+  if (!m || !d) return ''
+  return `${m}/${d}`
+}
+
 /** 10/10（六） */
 export function formatShortDate(day: string): string {
   const [, m, d] = day.split('-').map(Number)
@@ -65,7 +73,7 @@ export function trimNum(n: number): string {
 }
 
 export function formatLoggedToast(name: string, qty: number, grams: number | null): string {
-  return `已記錄 ${name} ${formatQty(qty, grams)}`
+  return `已記錄 ${name.trim() || '快速記錄'} ${formatQty(qty, grams)}`
 }
 
 export function withSpace(text: string): string {

@@ -1,4 +1,4 @@
-import type { ConfigMap, ItemRecord, LogRecord, Snapshot, WeightRecord } from '@/types'
+import type { ConfigMap, ItemRecord, LogRecord, LogSource, Snapshot, StoreRecord, WeightRecord } from '@/types'
 import { DEFAULT_CONFIG } from './defaults'
 
 const bool = (v: unknown) => v === true || v === 'TRUE' || v === 'true'
@@ -30,7 +30,13 @@ export function decodeLog(r: Record<string, unknown>): LogRecord {
     protein: num(r.protein),
     fat: num(r.fat),
     carb: num(r.carb),
+    source: r.source === 'quick' || r.source === 'kyujin' ? r.source as LogSource : 'app',
+    store: str(r.store),
     __pending: r.__pending ? true : undefined,
+    __write: r.__write === 'pending' || r.__write === 'failed' ? r.__write : undefined,
+    __queuedAt: r.__queuedAt ? str(r.__queuedAt) : undefined,
+    __failMessage: r.__failMessage ? str(r.__failMessage) : undefined,
+    __groupId: r.__groupId ? str(r.__groupId) : undefined,
   }
 }
 
@@ -43,6 +49,9 @@ export function decodeWeight(r: Record<string, unknown>): WeightRecord {
     updated_at: str(r.updated_at),
     kg: num(r.kg),
     __pending: r.__pending ? true : undefined,
+    __write: r.__write === 'pending' || r.__write === 'failed' ? r.__write : undefined,
+    __queuedAt: r.__queuedAt ? str(r.__queuedAt) : undefined,
+    __failMessage: r.__failMessage ? str(r.__failMessage) : undefined,
   }
 }
 
@@ -64,7 +73,29 @@ export function decodeItem(r: Record<string, unknown>): ItemRecord {
     carb: num(r.carb),
     fav: bool(r.fav),
     created_by: str(r.created_by) as ItemRecord['created_by'],
+    store: str(r.store),
     __pending: r.__pending ? true : undefined,
+    __write: r.__write === 'pending' || r.__write === 'failed' ? r.__write : undefined,
+    __queuedAt: r.__queuedAt ? str(r.__queuedAt) : undefined,
+    __failMessage: r.__failMessage ? str(r.__failMessage) : undefined,
+    __cascade: r.__cascade ? str(r.__cascade) : undefined,
+  }
+}
+
+export function decodeStore(r: Record<string, unknown>): StoreRecord {
+  return {
+    id: str(r.id),
+    ts: str(r.ts),
+    deleted: bool(r.deleted),
+    updated_at: str(r.updated_at),
+    name: str(r.name),
+    last_eaten_at: str(r.last_eaten_at),
+    created_by: (str(r.created_by) || 'app') as StoreRecord['created_by'],
+    __pending: r.__pending ? true : undefined,
+    __write: r.__write === 'pending' || r.__write === 'failed' ? r.__write : undefined,
+    __queuedAt: r.__queuedAt ? str(r.__queuedAt) : undefined,
+    __failMessage: r.__failMessage ? str(r.__failMessage) : undefined,
+    __cascade: r.__cascade ? str(r.__cascade) : undefined,
   }
 }
 
@@ -82,6 +113,7 @@ export function decodeSnapshot(raw: {
   serverTime?: string
   config?: Record<string, unknown>
   items?: Record<string, unknown>[]
+  stores?: Record<string, unknown>[]
   logs?: Record<string, unknown>[]
   weights?: Record<string, unknown>[]
 }): Snapshot {
@@ -91,6 +123,7 @@ export function decodeSnapshot(raw: {
     serverTime: str(raw.serverTime),
     config: decodeConfig(raw.config),
     items: (raw.items ?? []).map(decodeItem),
+    stores: (raw.stores ?? []).map(decodeStore),
     logs: (raw.logs ?? []).map(decodeLog),
     weights: (raw.weights ?? []).map(decodeWeight),
   }
@@ -104,13 +137,14 @@ export function encodeNum(v: number | null | undefined): number | '' {
   return v === null || v === undefined ? '' : v
 }
 
-export const LOG_COLS = ['id', 'ts', 'deleted', 'updated_at', 'day', 'item_id', 'name', 'src', 'qty', 'grams', 'kcal', 'protein', 'fat', 'carb'] as const
+export const LOG_COLS = ['id', 'ts', 'deleted', 'updated_at', 'day', 'item_id', 'name', 'src', 'qty', 'grams', 'kcal', 'protein', 'fat', 'carb', 'source', 'store'] as const
 export const WEIGHT_COLS = ['day', 'ts', 'deleted', 'updated_at', 'kg', 'id'] as const
-export const ITEM_COLS = ['id', 'ts', 'deleted', 'updated_at', 'kind', 'base_id', 'src', 'name', 'serving', 'serving_g', 'kcal', 'protein', 'fat', 'carb', 'fav', 'created_by'] as const
+export const ITEM_COLS = ['id', 'ts', 'deleted', 'updated_at', 'kind', 'base_id', 'src', 'name', 'serving', 'serving_g', 'kcal', 'protein', 'fat', 'carb', 'fav', 'created_by', 'store'] as const
+export const STORE_COLS = ['id', 'ts', 'deleted', 'updated_at', 'name', 'last_eaten_at', 'created_by'] as const
 export const CONFIG_COLS = ['key', 'value', 'updated_at'] as const
 
 export function logToRow(r: LogRecord): unknown[] {
-  return [r.id, r.ts, encodeBool(r.deleted), r.updated_at, r.day, r.item_id, r.name, r.src, r.qty, encodeNum(r.grams), r.kcal, r.protein, r.fat, r.carb]
+  return [r.id, r.ts, encodeBool(r.deleted), r.updated_at, r.day, r.item_id, r.name, r.src, r.qty, encodeNum(r.grams), r.kcal, r.protein, r.fat, r.carb, r.source, r.store]
 }
 
 export function weightToRow(r: WeightRecord): unknown[] {
@@ -118,7 +152,17 @@ export function weightToRow(r: WeightRecord): unknown[] {
 }
 
 export function itemToRow(r: ItemRecord): unknown[] {
-  return [r.id, r.ts, encodeBool(r.deleted), r.updated_at, r.kind, r.base_id, r.src, r.name, r.serving, encodeNum(r.serving_g), r.kcal, r.protein, r.fat, r.carb, encodeBool(r.fav), r.created_by]
+  return [r.id, r.ts, encodeBool(r.deleted), r.updated_at, r.kind, r.base_id, r.src, r.name, r.serving, encodeNum(r.serving_g), r.kcal, r.protein, r.fat, r.carb, encodeBool(r.fav), r.created_by, r.store]
+}
+
+export function storeToRow(r: StoreRecord): unknown[] {
+  return [r.id, r.ts, encodeBool(r.deleted), r.updated_at, r.name, r.last_eaten_at, r.created_by]
+}
+
+export function rowToStore(row: unknown[]): StoreRecord {
+  const o: Record<string, unknown> = {}
+  STORE_COLS.forEach((k, i) => { o[k] = row[i] })
+  return decodeStore(o)
 }
 
 export function rowToLog(row: unknown[]): LogRecord {

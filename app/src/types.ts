@@ -20,12 +20,32 @@ export type CatalogItem = {
   carb: number | null
 }
 
+export type LogSource = 'app' | 'quick' | 'kyujin'
+export type WriteStatus = 'pending' | 'failed'
+
 export type MergedItem = CatalogItem & {
   fav: boolean
   createdBy: CreatedBy | null
   override: boolean
   needsFill: boolean
   sheetSrc: SheetSrc
+  storeId: string
+  storeName: string
+}
+
+export type StoreRecord = {
+  id: string
+  ts: string
+  deleted: boolean
+  updated_at: string
+  name: string
+  last_eaten_at: string
+  created_by: CreatedBy
+  __pending?: boolean
+  __write?: WriteStatus
+  __queuedAt?: string
+  __failMessage?: string
+  __cascade?: string
 }
 
 export type LogRecord = {
@@ -43,7 +63,13 @@ export type LogRecord = {
   protein: number
   fat: number
   carb: number
+  source: LogSource
+  store: string
   __pending?: boolean
+  __write?: WriteStatus
+  __queuedAt?: string
+  __failMessage?: string
+  __groupId?: string
 }
 
 export type WeightRecord = {
@@ -54,6 +80,9 @@ export type WeightRecord = {
   updated_at: string
   kg: number
   __pending?: boolean
+  __write?: WriteStatus
+  __queuedAt?: string
+  __failMessage?: string
 }
 
 export type ItemRecord = {
@@ -73,7 +102,12 @@ export type ItemRecord = {
   carb: number
   fav: boolean
   created_by: CreatedBy
+  store: string
   __pending?: boolean
+  __write?: WriteStatus
+  __queuedAt?: string
+  __failMessage?: string
+  __cascade?: string
 }
 
 export type ConfigMap = Record<string, string>
@@ -84,6 +118,7 @@ export type Snapshot = {
   serverTime: string
   config: ConfigMap
   items: ItemRecord[]
+  stores: StoreRecord[]
   logs: LogRecord[]
   weights: WeightRecord[]
 }
@@ -136,7 +171,7 @@ export type TrendsView = {
   chartAvgKcal: number | null
 }
 
-export type SearchFilter = 'all' | 'fav' | '711' | 'familymart'
+export type SearchFilter = 'all' | 'fav' | 'store' | '711' | 'familymart'
 
 export type SearchHit = {
   item: MergedItem
@@ -148,4 +183,6 @@ export type Toast = {
   id: string
   message: string
   undo?: () => unknown
+  durationMs?: number
+  actionLabel?: string
 }

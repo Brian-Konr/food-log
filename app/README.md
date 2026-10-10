@@ -1,6 +1,6 @@
 # food-log
 
-Brian 用這個手機 PWA 記飲食與體重：今天還剩多少熱量／蛋白質、四週趨勢、自建品項。Kyujin 用同一個後端寫自建品項和體重，不能寫飲食紀錄。
+Brian 用這個手機 PWA 記飲食與體重：今天還剩多少熱量／蛋白質、四週趨勢、自建品項與常吃店家。Kyujin 用同一個後端寫店家、店家品項、`source=kyujin` 的飲食紀錄、自建品項和體重。
 
 線上版：https://brian-konr.github.io/food-log/
 
@@ -15,14 +15,14 @@ Brian 用這個手機 PWA 記飲食與體重：今天還剩多少熱量／蛋白
 - **資料**：存在那份 Google Sheet。沒有照片、沒有 Drive。
 - **保護**：`/exec` 網址是公開的（之後會放在 `deploy/gas-url`），每個請求都必須帶「共享密鑰」。密鑰只存在 Apps Script 的指令碼屬性和手機的瀏覽器裡，不進 repo，也不進 build 產物。
 
-手機送出的紀錄會先存在手機的待送佇列，送成功才移除，所以離線或 Google 很慢時也不會遺失。
+手機送出的紀錄會先存在 IndexedDB 待送佇列，送成功才移除，所以離線或 Google 很慢時也不會遺失。有快照就先畫快照並顯示「同步中」；沒有快照就畫灰條，不要出現預設的 2,000 kcal。
 
 ## 目錄
 
 ```
 src/            前端（App.tsx 是唯一有狀態的容器；screens/、components/ 是只吃 props 的畫面）
 src/api/        資料層：待送佇列（index.ts）、Apps Script 介面卡（gas.ts）、本機試用介面卡（mock.ts）
-src/data/       Sheet 列轉換（codec.ts）、預設 Config、品項快照合併、搜尋、連線狀態
+src/data/       Sheet 列轉換（codec.ts）、預設 Config、品項快照合併、搜尋、連線狀態、IndexedDB（kv.ts）、快照（cache.ts）、載入狀態（loadstate.ts）
 src/lib/        台北日界線、營養換算、趨勢、文案格式
 gas/            Apps Script 後端：Code.gs、Schema.gs、Setup.gs、Trends.gs
                 appsscript.json、FoodLog-AppsScript.gs（四個合併成一檔，方便貼上）
@@ -56,14 +56,17 @@ npm run dev        # http://localhost:5173
 npm test           # 單元測試：日界線、營養、趨勢、搜尋、目錄、待送佇列、Apps Script 後端、密鑰掃描
 npm run build      # 型別檢查＋產出 dist/
 npm run build:gas  # 改過 gas/*.gs 後重新產生 gas/FoodLog-AppsScript.gs（測試會檢查兩邊一致）
+npm run e2e        # 真實點擊（WebKit）。會自己開 dev server；瀏覽器沿用 PLAYWRIGHT_DIR，不下載
+npm run deploy     # 前端 gh-pages（./scripts/deploy-gh-pages.sh）
+npm run deploy:gas # 在 app/ build:gas，複製到 clasp/src/Code.js，clasp push 再 update-deployment
 ```
 
-`npm run build` **不會**抓全家／7-11 目錄，也不打網路。
+`npm run build` **不會**抓全家／7-11 目錄，也不打網路。`npm run deploy` 與 `npm run deploy:gas` 這次實作不要執行。
 
 ## 部署前端
 
 ```bash
-./scripts/deploy-gh-pages.sh
+npm run deploy
 ```
 
 這次實作**不要執行**。腳本會跑測試，讀 `deploy/gas-url` 當作 `VITE_GAS_URL`，用 `BASE=/food-log/` 建置，檢查產物裡沒有密鑰，再把 `dist/` 強制推到 `gh-pages` 分支。遠端頁面是 https://brian-konr.github.io/food-log/ 。
@@ -86,12 +89,17 @@ Kyujin 提醒連結是 `https://brian-konr.github.io/food-log/#weight`。
 
 ### 更新程式碼（網址不變）
 
-1. 改 `gas/` 裡的檔案，跑 `npm run build:gas` 和 `npm test`。
-2. ⛔ 在 Apps Script 編輯器貼上新的 `gas/FoodLog-AppsScript.gs`（或對應的檔案）並存檔。
-3. ⛔「部署 → 管理部署作業 → 選現有的部署 → 編輯（鉛筆）→ 版本選『新版本』→ 部署」。這樣 `/exec` 網址不會變，前端不用重新部署。
-4. 如果 Schema 加了欄位，再執行一次 `setupFoodLog` 補上表頭。
-5. 如果 `appsscript.json` 的授權範圍變了，執行任一函式時會再要求授權一次。
-6. 只改前端：不用重部署 Apps Script。
+這次（v1.1）改了分頁、欄位、action、權限。只部署前端時，舊 `/exec` 沒有 `upsertStore`，也沒有新欄。Brian 或 Kazuha 按這個順序：
+
+1. 開發機改 `app/gas/*.gs`，跑 `npm run build:gas` 與 `npm test`。合併檔是 `app/gas/FoodLog-AppsScript.gs`（不要手改）。
+2. ⛔ 貼上編輯器，或在 app/ 跑 `npm run deploy:gas`。腳本會 `build:gas`，把 `gas/FoodLog-AppsScript.gs` 複製成 repo 根目錄 `clasp/src/Code.js`（保留 `clasp/src/appsscript.json`），先把 `clasp/src` 備份成 `clasp/src-bak-時間戳`，再用 `/home/box/.local/bin/clasp` 在 `clasp/` push，並對 `clasp deployments` 裡非 `@HEAD` 的正式部署做 `update-deployment`。不要改 `app/deploy/gas-url`。
+3. ⛔ 在編輯器選 `migrateFoodLog` 按 Run（可選：後端第一次收到請求也會在 lock 裡自動 migrate，並把 `schema_version` 寫進 Config，之後跳過）。執行紀錄要看到第一次有建立 `Stores`、Items/Logs 補了欄；再跑一次是空陣列。不要跑 `rotateSharedSecret`。`setupFoodLog` 可以再跑，它只補缺的表和 Config，不重生密鑰。
+4. ⛔「部署 → 管理部署作業 → 鉛筆 → 新版本」（`npm run deploy:gas` 已做這步就不用再按）。`/exec` 網址不變，不要改 `app/deploy/gas-url`。
+5. ⛔ 前端用 `npm run deploy`。這次實作不要執行。
+
+前端要容忍舊後端：`read` 沒有 `stores` 時當成 `[]`。`schema_outdated` 只會出現在自動 migrate 仍失敗時；畫面把錯誤代碼顯示出來。
+
+授權範圍維持 `spreadsheets.currentonly`。不要加 Drive。
 
 如果改用「新增部署作業」，會得到新的網址，要更新 `deploy/gas-url` 並重新部署前端。
 
@@ -111,23 +119,35 @@ scriptId 留給 Brian 填，不要抄其他專案的 scriptId。
 
 **Items**（主鍵 `id`）
 
-`id`, `ts`, `deleted`, `updated_at`, `kind`, `base_id`, `src`, `name`, `serving`, `serving_g`, `kcal`, `protein`, `fat`, `carb`, `fav`, `created_by`
+`id`, `ts`, `deleted`, `updated_at`, `kind`, `base_id`, `src`, `name`, `serving`, `serving_g`, `kcal`, `protein`, `fat`, `carb`, `fav`, `created_by`, `store`
 
 - `kind`：`自建` 或 `補填`
 - `id`：自建 `u:<uuid>`；補填 `ov:<官方 id>`，且 `base_id` = 那個官方 id
 - `src`：`7-11`／`全家`／`其他`
 - `created_by`：`app` 或 `kyujin`
 - `fav`：只有自建品項使用。官方收藏不在這張表（在 Config `fav_ids`）
+- `store`：店家品項＝`Stores.id`；一般自建／補填＝空。店家品項必須 `kind=自建`、`src=其他`、`id` 以 `u:` 開頭、`serving='1 份'`
 
 **Logs**（主鍵 `id`）
 
-`id`, `ts`, `deleted`, `updated_at`, `day`, `item_id`, `name`, `src`, `qty`, `grams`, `kcal`, `protein`, `fat`, `carb`
+`id`, `ts`, `deleted`, `updated_at`, `day`, `item_id`, `name`, `src`, `qty`, `grams`, `kcal`, `protein`, `fat`, `carb`, `source`, `store`
 
 - `ts` 是吃的時間。`day` 是台北日期 `YYYY-MM-DD`，由前端算好
-- `name` 是當下的品名快照
+- `name` 是當下的品名快照。快速記錄允許空名
 - `kcal/protein/fat/carb` 是**這筆實際吃的量**（已換算、已四捨五入），不是每份
 - 用份數時 `grams` 空著。用克數時 `grams` 有值，`qty` = `grams / servingG`
+- `source`：`app`（舊列空值也算 `app`）／`quick`／`kyujin`
+- `store`：記下去當下的 `Stores.id`，可空。改品項營養素時不要回寫這欄
+- 快速記錄：`item_id` 空、`qty` 固定 1、不建立 Items 列
 - 沒有 `who` 欄
+
+**Stores**（主鍵 `id`）
+
+`id`, `ts`, `deleted`, `updated_at`, `name`, `last_eaten_at`, `created_by`
+
+- `id`：`s:` + uuid
+- `last_eaten_at`：有帶 `store` 的 Log append 時更新成較新的那個 `ts`，不要往回撥
+- 刪店會連帶軟刪該店未刪除品項；復原只還原同一 `updated_at` 的品項。Logs 不動
 
 **Weights**（主鍵 `day`，不是 `id`）
 
@@ -160,7 +180,7 @@ scriptId 留給 Brian 填，不要抄其他專案的 scriptId。
 
 寫入包 `LockService.getScriptLock().tryLock(10000)`。拿不到回 `{ ok:false, error:'busy', message:'另一個人正在寫入，請再試一次' }`。讀取不加鎖。`updated_at` 一律由後端寫成台北現在時間。
 
-錯誤碼只有：`unauthorized`、`bad_json`、`bad_action`、`bad_table`、`bad_record`、`not_found`、`busy`、`server_error`、`forbidden`。
+錯誤碼只有：`unauthorized`、`bad_json`、`bad_action`、`bad_table`、`bad_record`、`not_found`、`busy`、`server_error`、`forbidden`、`duplicate_name`、`schema_outdated`。
 
 `client`：Kyujin 送 `"kyujin"`。App 不送或送 `"app"`。
 
@@ -168,11 +188,12 @@ Logs 的 append/update 以及 upsertItem：四項營養素都要是有限數字�
 
 | action | 參數 | 說明 |
 |---|---|---|
-| `read` | `since?` | `version: 1`。Config、Items 全回（含已刪除）。Logs、Weights：`day >= 今天減 34 天`（共 35 天），含已刪除。有 `since` 時 Logs／Weights 再濾 `updated_at >= since` |
-| `append` | `table:'Logs'`, `record` | 新增飲食紀錄。`id` 由前端產生，重複的 `id` 視為成功。Kyujin：`forbidden` |
-| `update` | `table:'Logs'`, `id`, `patch` | 改份量、時間、營養素。不能改 `id`。Kyujin：`forbidden` |
-| `softDelete` / `restore` | `table`, `id` | 軟刪除／復原。Weights 依列上的 `id`。Weights restore 時若該 `day` 已有未刪除列則 `bad_record`。Kyujin：`forbidden` |
-| `upsertItem` | `record` | 自建 `u:` 或補填 `ov:`。不能改官方 `fm:`／`711:`。同一 `id` 再送是更新不是第二列。Kyujin 只能寫 `u:` 且 `created_by:kyujin`，不能改 App 建的品項 |
+| `read` | `since?` | `version: 1`。Config、Items、Stores 全回（含已刪除）。Logs、Weights：`day >= 今天減 34 天`（共 35 天），含已刪除。有 `since` 時 Logs／Weights 再濾 `updated_at >= since`。沒有 `stores` 時前端當 `[]` |
+| `append` | `table:'Logs'`, `record` | 新增飲食紀錄。`id` 由前端產生，重複的 `id` 視為成功。Kyujin 必須 `source:'kyujin'` |
+| `update` | `table:'Logs'`, `id`, `patch` | 改份量、時間、營養素、品名。不能改 `id`、`source`、`store`、`item_id`。Kyujin 只能改 `source=kyujin` 的列 |
+| `softDelete` / `restore` | `table`, `id` | 軟刪除／復原。Weights 依列上的 `id`。Weights restore 時若該 `day` 已有未刪除列則 `bad_record`。`Stores` 會連帶品項。Kyujin 不能刪／復原店家；Logs 僅限 `source=kyujin` |
+| `upsertItem` | `record` | 自建 `u:` 或補填 `ov:`。不能改官方 `fm:`／`711:`。同一 `id` 再送是更新不是第二列。`store` 非空時必須是未刪除店家。Kyujin 可改店家品項（含 App 建的）；沒有店家時只能寫自己的 `u:` |
+| `upsertStore` | `record: { id, name, ts?, created_by? }` | 新建或改名。`id` 以 `s:` 開頭。重複店名（NFKC／標點正規化後相同）回 `duplicate_name`。Kyujin 新建必須 `created_by:kyujin`；改名保留原本 `created_by` |
 | `upsertWeight` | `record: { day, kg, id, ts }` | 同日新 id 覆寫公斤數、保留原 id；重送同一 id 不改儲存格。`kg` 30.0–250.0、最多一位小數 |
 | `setConfig` | `key`, `value` | 設定頁存檔。Kyujin：`forbidden` |
 | `history` | `table`, `before`, `limit?` | `Logs` 或 `Weights`。`day < before`，新到舊，預設 35、上限 90。不進待送佇列。Kyujin 可以呼叫 |
@@ -189,14 +210,14 @@ Logs 的 append/update 以及 upsertItem：四項營養素都要是有限數字�
 
 ## Kyujin
 
-外部客戶端，不是 App 裡的第二個畫面。請求加 `"client": "kyujin"`。可以：`read`、`summary`、`trends`、`history`、寫 `u:` 自建品項（`created_by` 必須是 `kyujin`）、`upsertWeight`。不可以：寫 Logs、補填 `ov:`、改官方品項、`setConfig`、改 App 建的 `u:` 品項、刪除。
+外部客戶端，不是 App 裡的第二個畫面。請求加 `"client": "kyujin"`。可以：`read`、`summary`、`trends`、`history`、`upsertStore`（新建 `created_by:kyujin`，可改 App 店名）、店家品項 `upsertItem`（含 App 建的）、寫／改／刪 `source=kyujin` 的 Logs、寫自己建的沒有店家的 `u:`、`upsertWeight`。不可以：刪／復原店家、動 `app`／`quick` 的 Logs、改沒有店家的 App `u:`、補填 `ov:`、改官方品項、`setConfig`。
 
 範例請求見 [`../docs/kyujin-api.md`](../docs/kyujin-api.md)。`summary` 的 `remaining` 若為負數，表示當天已經超過目標；App 會顯示「超過」，不會顯示負號。
 
 ## 文件
 
 - [`AGENTS.md`](AGENTS.md)：給 coding agent 的規則
-- [`../docs/spec/v1.md`](../docs/spec/v1.md)：技術規格
+- [`../docs/spec/v1.md`](../docs/spec/v1.md)、[`../docs/spec/v1.1.md`](../docs/spec/v1.1.md)：技術規格
 - [`../docs/PRD.md`](../docs/PRD.md)：產品需求
 - [`../docs/design/DESIGN.md`](../docs/design/DESIGN.md)：設計系統
 - [`../docs/kyujin-api.md`](../docs/kyujin-api.md)：Kyujin API 範例

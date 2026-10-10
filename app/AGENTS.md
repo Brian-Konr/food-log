@@ -1,11 +1,11 @@
 # AGENTS.md
 
-給接手這個 repo 的 coding agent。人看的說明在 [`README.md`](README.md)；規格在 [`../docs/spec/v1.md`](../docs/spec/v1.md)，施工計畫在 [`../docs/plans/v1.md`](../docs/plans/v1.md)。改動前請讀完這份文件。
+給接手這個 repo 的 coding agent。人看的說明在 [`README.md`](README.md)；規格在 [`../docs/spec/v1.1.md`](../docs/spec/v1.1.md)（v1 行為沒寫要改的仍有效），施工計畫在 [`../docs/plans/v1.1.md`](../docs/plans/v1.1.md)。改動前請讀完這份文件。
 
 ## 專案目的與使用者
 
 - **Brian** 用這個 PWA 記自己吃了什麼、還剩多少熱量／蛋白質，以及體重。資料在 Brian 的 Google Sheet，經 Apps Script。
-- **Kyujin** 是外部客戶端（不是第二個畫面）。同一個 `/exec` 網址和共享密鑰。Kyujin **只能新增或修改自己建的品項，以及寫體重**；不能寫飲食紀錄、不能補填官方品項、不能改設定。
+- **Kyujin** 是外部客戶端（不是第二個畫面）。同一個 `/exec` 網址和共享密鑰。Kyujin 可以建／改店家、改任何店家品項、寫 `source=kyujin` 的 Logs、寫自己建的沒有店家的 `u:` 品項、寫體重。不能刪店家、不能動 `app`／`quick` 的 Logs、不能改沒有店家的 App 自建品項、不能補填官方品項、不能改設定。
 - 介面全部是**繁體中文**，時區固定 Asia/Taipei（UTC+8，無夏令時間）。
 - 資料存在 Google Sheet，人和其他工具會直接打開 Sheet 看，所以欄位值要人看得懂（存中文選項文字，不存代碼）。
 
@@ -15,16 +15,17 @@
 |---|---|
 | `src/App.tsx` | 唯一有狀態的容器：hash 路由（`#today`、`#trends`、`#items`、`#settings`、`#weight`）、toast、把畫面接到資料層 |
 | `src/screens/`、`src/components/` | 只吃 props 的展示元件，不直接呼叫資料層；`components/ui/` 是 shadcn/ui |
-| `src/hooks/useFoodLog.ts` | 讀資料、定時重讀、追蹤連線狀態與待送筆數、`failStreak` |
-| `src/api/index.ts` | 待送佇列：先存 localStorage，依序送出，成功才移除。前綴 `foodlog` |
+| `src/hooks/useFoodLog.ts` | 讀資料、定時重讀、`loadState`、快取、待送筆數、`failStreak` |
+| `src/api/index.ts` | 待送佇列：存在 IndexedDB（`food-log`／`kv`），依序送出。啟動時從 localStorage 遷移 |
 | `src/api/gas.ts` | Apps Script 介面卡（`GAS_TIMEOUT_MS = 55000`、`text/plain` POST） |
-| `src/api/mock.ts` | 本機試用介面卡（沒有網址時使用）。起始是空資料，驗證規則和後端相同 |
-| `src/api/errors.ts` | `NetworkError`、`ServerError`。`PERMANENT_ERRORS` 含 `forbidden` |
+| `src/api/mock.ts` | 本機試用介面卡（沒有網址時使用）。起始是空資料，驗證規則和後端相同。`latencyMs`、`setOffline` |
+| `src/api/errors.ts` | `NetworkError`、`ServerError`。`PERMANENT_ERRORS` 含 `forbidden`、`duplicate_name`、`schema_outdated` |
 | `src/data/codec.ts` | Sheet 原始列和畫面型別（`src/types.ts`）之間的轉換 |
 | `src/data/defaults.ts` | 預設 Config（必須和 `gas/Schema.gs` 的 `DEFAULT_CONFIG` 逐字相同） |
 | `src/data/network.ts` | 連線狀態與橫幅規則 |
-| `src/data/catalog.ts` | 載入快照並套上 `ov:` 補填、`u:` 自建、`fav_ids` |
-| `src/data/search.ts` | 本機搜尋索引與計分 |
+| `src/data/catalog.ts` | 載入快照並套上 `ov:` 補填、`u:` 自建、`fav_ids`、店家 |
+| `src/data/search.ts` | 本機搜尋索引與計分。`SearchHit.group` 的 `'store'` 是 7-11・全家區；篩選膠囊 `'store'` 是餐廳品項 |
+| `src/data/kv.ts`、`cache.ts`、`loadstate.ts` | IndexedDB、快照、載入五態 |
 | `src/lib/day.ts` | 台北日界線、週一 |
 | `src/lib/nutrition.ts` | 份量換算、合計、剩餘 |
 | `src/lib/trends.ts` | 趨勢純函式（與 `gas/Trends.gs` 同一套算法） |
@@ -33,7 +34,7 @@
 | `test/` | Vitest；`gas-fakes.ts` 模擬 SpreadsheetApp、PropertiesService 等，讓 `gas/*.gs` 能在 Node 裡測。food-log 不使用 Drive |
 | `scripts/` | `deploy-gh-pages.sh`、`build-gas.mjs`、`sync-tokens.mjs`、`build-catalog.mjs`、`fetch-fam-details.mjs` |
 | `public/catalog-v1.json` | 內建品項快照。repo 裡的 `version: "fixture"` 是示意；正式檔由 `build:catalog` 覆蓋 |
-| `../docs/spec/` | 技術規格 `v1.md` |
+| `../docs/spec/` | 技術規格 `v1.md`、`v1.1.md` |
 | `../docs/design/` | `DESIGN.md`、`tokens.css`、原型 `mock/` |
 | `../docs/kyujin-api.md` | Kyujin 範例請求 |
 | `deploy/gas-url` | 目前的 `/exec` 網址（公開，不是秘密）。v1 實作時先不要建 |
@@ -52,10 +53,10 @@
 ## 資料模型與 API 合約
 
 - Sheet 分頁與欄位定義在 `gas/Schema.gs` 的 `SCHEMA`，說明在 README 的「Sheet 分頁與欄位」和 `../docs/spec/v1.md`。
-- 四個分頁：Items（主鍵 `id`）、Logs（主鍵 `id`）、Weights（主鍵 `day`）、Config（主鍵 `key`）。
-- 前端一律 `POST`、`Content-Type: text/plain`，body 是 `{ secret, action, ... }`。action 有 `read`、`append`、`update`、`softDelete`、`restore`、`upsertItem`、`upsertWeight`、`setConfig`、`history`、`summary`、`trends`。參數與回傳見 README 的 API 表和 `gas/Code.gs` 檔頭。`history`、`summary`、`trends` 不進待送佇列。
-- 回應是 `{ ok: true, ... }` 或 `{ ok: false, error, message }`。`error` 代碼只有：`unauthorized`、`bad_json`、`bad_action`、`bad_table`、`bad_record`、`not_found`、`busy`、`server_error`、`forbidden`。
-- 要加欄位時：改 `SCHEMA`，同步 `src/types.ts`、`src/data/codec.ts`、規格，加測試，跑 `npm run build:gas`。已上線的 Sheet 要請 Brian 重跑 `setupFoodLog` 補表頭（它只補缺的欄位，不清資料）。**不要改既有欄位的名稱或順序**。
+- 五個分頁：Items（主鍵 `id`）、Logs（主鍵 `id`）、Weights（主鍵 `day`）、Stores（主鍵 `id`）、Config（主鍵 `key`）。Items 最後加 `store`；Logs 最後加 `source`、`store`。
+- 前端一律 `POST`、`Content-Type: text/plain`，body 是 `{ secret, action, ... }`。action 有 `read`、`append`、`update`、`softDelete`、`restore`、`upsertItem`、`upsertStore`、`upsertWeight`、`setConfig`、`history`、`summary`、`trends`。參數與回傳見 README 的 API 表和 `gas/Code.gs` 檔頭。`history`、`summary`、`trends` 不進待送佇列。`read` 回 `stores`（沒有就當 `[]`）。
+- 回應是 `{ ok: true, ... }` 或 `{ ok: false, error, message }`。`error` 代碼只有：`unauthorized`、`bad_json`、`bad_action`、`bad_table`、`bad_record`、`not_found`、`busy`、`server_error`、`forbidden`、`duplicate_name`、`schema_outdated`。
+- 要加欄位時：改 `SCHEMA`，同步 `src/types.ts`、`src/data/codec.ts`、規格，加測試，跑 `npm run build:gas`。已上線的 Sheet：後端第一次收到請求會在 LockService 裡自動 migrate，並把 `schema_version` 寫進 Config，之後跳過。編輯器的 `migrateFoodLog` 仍可用（只補缺的，不清資料、不碰密鑰）。`setupFoodLog` 也可以再跑，只補缺的表和 Config。**不要改既有欄位的名稱或順序**。骨架或錯誤空畫面不要用 `DEFAULT_CONFIG` 的 2000 去畫剩餘。
 
 ## 不可破壞的規則
 
@@ -63,7 +64,7 @@
 2. **密鑰、token 都不進 repo。** repo 是公開的。
 3. **寫入必須冪等。** 每筆紀錄的 `id` 在前端產生，後端遇到重複 id 視為成功。逾時後重送不能變成兩筆。例外只有體重：同一天第二筆新 id 會覆寫公斤數，Sheet 仍只有一筆未刪除的列；重送舊 id 不改儲存格。
 4. **所有請求最長等 55 秒**（`GAS_TIMEOUT_MS`）。不要把逾時調短。
-5. **離線佇列不能默默丟資料。** 送不出去的紀錄留在手機，連不上時每 20 秒重試，上線後補送。
+5. **離線佇列不能默默丟資料。** 送不出去的紀錄留在手機 IndexedDB。暫時失敗後依序等 2 秒、5 秒、15 秒各自動 `flush` 一次；三次之後等回到前景或 `online` 再試。永久錯誤不進這個計時器。
 6. **連線橫幅規則**：背景讀取失敗一次不顯示，15 秒後重讀，連續失敗 2 次才顯示；有待送紀錄時失敗一次就顯示（`src/data/network.ts`）。不要改這套規則。
 7. **後端寫入用 `LockService` 包住（等 10 秒）**。飲食紀錄只 append 和軟刪除（`deleted=TRUE`）。
 8. **`src/data/defaults.ts` 和 `gas/Schema.gs` 的預設值必須一致**，`test/defaults.test.ts` 會比對。`theme` 不進 Sheet。
@@ -81,6 +82,7 @@ npm ci
 npm test            # 全部單元測試，必須全過
 npm run build       # tsc -b + vite build，必須沒有錯誤
 npm run build:gas   # 改過 gas/ 才需要
+npm run e2e         # 真實點擊；自己開 dev server，PLAYWRIGHT_DIR 預設已設，不下載瀏覽器
 ```
 
 改動後的驗證：

@@ -7,6 +7,7 @@ export function KcalBarChart(props: {
   target: number
   summary: string
   incompleteN: number
+  maskDay?: string
 }) {
   const [sel, setSel] = useState<string | null>(null)
   const max = Math.max(props.target, ...props.slots.map((s) => s.kcal), 1)
@@ -25,7 +26,8 @@ export function KcalBarChart(props: {
         </defs>
         {props.slots.map((s, i) => {
           const x = i * 10
-          const h = s.slot === 'future' ? 0 : (s.kcal / max) * 90
+          const masked = props.maskDay === s.day
+          const h = s.slot === 'future' || masked ? 0 : (s.kcal / max) * 90
           const y = 100 - h
           const fill = s.slot === 'incomplete' ? 'url(#inc)' : 'var(--chart-bar)'
           const opacity = s.slot === 'today' ? 0.5 : 1
@@ -33,6 +35,7 @@ export function KcalBarChart(props: {
             <g key={s.day}>
               {i % 7 === 0 && i !== 0 && <line x1={x} y1="8" x2={x} y2="100" stroke="var(--border)" strokeWidth="1" />}
               <rect x={x + 1} y={8} width="8" height="92" fill="transparent" onClick={() => setSel(s.day)} />
+              {masked && <rect x={x + 2} y={10} width="6" height="90" fill="var(--muted)" rx="1" />}
               {h > 0 && <rect x={x + 2} y={y} width="6" height={h} fill={fill} opacity={opacity} stroke={s.slot === 'incomplete' ? 'var(--chart-incomplete)' : 'none'} />}
               {s.slot === 'incomplete' && <text x={x + 5} y={Math.max(y - 2, 13)} textAnchor="middle" fontSize="14" fontWeight="700" fill="var(--chart-incomplete)">!</text>}
               {s.slot === 'today' && <text x={Math.min(x + 5, 280)} y="118" textAnchor={i >= props.slots.length - 2 ? 'end' : 'middle'} fontSize="14" fill="var(--muted-foreground)">今天</text>}

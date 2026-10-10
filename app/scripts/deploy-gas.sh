@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# 把 app/gas 合併檔推到正式綁定的 clasp 專案，並把現有正式 /exec 部署更新到新版本。
+# 正式專案在 /workspace/studio/projects/food-log/clasp（.clasp.json 的 rootDir 是 src），不在 app/。
+# 需要本機已 clasp login。不要 commit .clasprc.json。
+# 用法：在 app/ 執行 npm run deploy:gas
+# 這次實作不要執行。
+set -euo pipefail
+
+APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT_DIR="$(cd "$APP_DIR/.." && pwd)"
+CLASP_DIR="$ROOT_DIR/clasp"
+CLASP_BIN="${CLASP_BIN:-/home/box/.local/bin/clasp}"
+SRC="$CLASP_DIR/src"
+MERGED="$APP_DIR/gas/FoodLog-AppsScript.gs"
+
+if [ ! -f "$CLASP_DIR/.clasp.json" ]; then
+  echo "[deploy:gas] 找不到 $CLASP_DIR/.clasp.json" >&2
+  exit 1
+fi
+if [ ! -x "$CLASP_BIN" ] && ! command -v "$CLASP_BIN" >/dev/null 2>&1; then
+  echo "[deploy:gas] 找不到 clasp：$CLASP_BIN" >&2
+  exit 1
+fi
+
+echo "[deploy:gas] npm run build:gas"
+(
+  cd "$APP_DIR"
+  npm run build:gas
+)
+if [ ! -f "$MERGED" ]; then
+  echo "[deploy:gas] 沒有產生 $MERGED" >&2
+  exit 1
+fi
+
+STAMP="$(date +%Y%m%d%H%M%S)"
+BAK="$CLASP_DIR/src-bak-$STAMP"
+echo "[deploy:gas] 備份 $SRC → $BAK"
+cp -a "$SRC" "$BAK"
+
+echo "[deploy:gas] 複製合併檔 → $SRC/Code.js（保留 appsscript.json）"
+cp "$MERGED" "$SRC/Code.js"
+if [ ! -f "$SRC/appsscript.json" ]; then
+  echo "[deploy:gas] $SRC/appsscript.json 不見了，從備份還原" >&2
+  cp "$BAK/appsscript.json" "$SRC/appsscript.json"
+fi
+
+echo "[deploy:gas] clasp push"
+(
+  cd "$CLASP_DIR"
+  "$CLASP_BIN" push
+)
+
+echo "[deploy:gas] 找出非 @HEAD 的正式部署"
+DEPLOY_JSON="$("$CLASP_BIN" --json deployments 2>/dev/null || true)"
+DEPLOY_ID=""
+if [ -n "$DEPLOY_JSON" ]; then
+  DEPLOY_ID="$(DEPLOY_JSON="$DEPLOY_JSON" python3 - <<'PY'
+import json, os, re, sys
+raw = os.environ.get("DEPLOY_JSON", "").strip()
+if not raw:
+    sys.exit(0)
+try:
+    data = json.loads(raw)
+except json.JSONDecodeError:
+    sys.exit(0)
+rows = data if isinstance(data, list) else data.get("deployments") or data.get("items") or []
+pick = ""
+for d in rows:
+    if not isinstance(d, dict):
+        continue
+    did = d.get("deploymentId") or d.get("id") or ""
+    cfg = d.get("deploymentConfig") or d.get("config") or {}
+    ver = cfg.get("versionNumber") if isinstance(cfg, dict) else None
+    # @HEAD 沒有 versionNumber，或文字裡帶 HEAD
+    blob = json.dumps(d, ensure_ascii=False)
+    if ver in (None, "", 0) or re.search(r"@HEAD\b", blob):
+        continue
+    if did:
+        pick = did
+        break
+if pick:
+    print(pick)
+PY
+)"
+fi
+if [ -z "$DEPLOY_ID" ]; then
+  DEPLOY_ID="$(
+    cd "$CLASP_DIR"
+    "$CLASP_BIN" deployments | awk '
+      /@HEAD/ { next }
+      {
+        if (match($0, /[A-Za-z0-9_-]{20,}/)) {
+          print substr($0, RSTART, RLENGTH)
+          exit
+        }
+      }
+    '
+  )"
+fi
+if [ -z "$DEPLOY_ID" ]; then
+  echo "[deploy:gas] 找不到非 @HEAD 的部署" >&2
+  exit 1
+fi
+
+echo "[deploy:gas] update-deployment $DEPLOY_ID"
+(
+  cd "$CLASP_DIR"
+  "$CLASP_BIN" update-deployment "$DEPLOY_ID"
+)
+echo "[deploy:gas] 已更新正式部署（網址不變）"

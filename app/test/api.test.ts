@@ -10,17 +10,18 @@ const NOW = Date.parse('2026-10-10T18:00:00+08:00')
 const day = taipeiDay(new Date(NOW))
 const ts = taipeiIso(NOW)
 
-function setup() {
+async function setup() {
   const storage = memoryStorage()
   const mock = createMockAdapter({ storage, now: () => NOW })
   const api = createApi({ adapter: mock, storage, now: () => NOW })
+  await api.ready
   return { storage, mock, api }
 }
 
-const logFields = { ts, day, item_id: 'fm:1', name: '雞胸', src: '全家' as const, qty: 1, grams: null, kcal: 106, protein: 20.8, fat: 1.5, carb: 2.3, deleted: false, updated_at: ts }
+const logFields = { ts, day, item_id: 'fm:1', name: '雞胸', src: '全家' as const, qty: 1, grams: null, kcal: 106, protein: 20.8, fat: 1.5, carb: 2.3, deleted: false, updated_at: ts, source: 'app' as const, store: '' }
 
 test('本機試用起始是空資料', async () => {
-  const { api } = setup()
+  const { api } = await setup()
   const d = await api.load()
   assert.equal(d.logs.length, 0)
   assert.equal(d.weights.length, 0)
@@ -28,11 +29,10 @@ test('本機試用起始是空資料', async () => {
 })
 
 test('離線寫入留在 outbox、順序送出、樂觀列有待上傳標記', async () => {
-  const { api, mock } = setup()
+  const { api, mock } = await setup()
   mock.setOffline(true)
-  const p = api.appendLog({ id: 'l1', ...logFields })
+  await api.appendLog({ id: 'l1', ...logFields })
   assert.equal(api.peek()!.logs.find((r) => r.id === 'l1')?.__pending, true)
-  await p
   assert.equal(api.status().pending, 1)
   mock.setOffline(false)
   assert.equal(await api.flush(), 1)
@@ -41,7 +41,7 @@ test('離線寫入留在 outbox、順序送出、樂觀列有待上傳標記', a
 })
 
 test('永久錯誤移出、busy 留下', async () => {
-  const { api } = setup()
+  const { api } = await setup()
   await api.updateLog('no-such', { qty: 2 })
   assert.equal(api.status().failed[0].error, 'not_found')
   assert.equal(api.status().pending, 0)
@@ -59,7 +59,7 @@ test('永久錯誤移出、busy 留下', async () => {
 })
 
 test('重複 id 不複製列', async () => {
-  const { mock } = setup()
+  const { mock } = await setup()
   const rec = { id: 'dup', ...logFields }
   await mock.call({ action: 'append', table: 'Logs', record: rec })
   const again = await mock.call({ action: 'append', table: 'Logs', record: rec })

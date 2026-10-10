@@ -1,4 +1,4 @@
-import type { LogRecord, MergedItem, SearchFilter, SearchHit } from '@/types'
+import type { LogRecord, MergedItem, SearchFilter, SearchHit, StoreRecord } from '@/types'
 import { addDays } from '@/lib/day'
 
 const PUNCT = /[\s\-·・（）()【】[\]、，。．/／]/g
@@ -14,8 +14,8 @@ export function brandPrefix(item: Pick<MergedItem, 'src'>): string {
   return ''
 }
 
-export function indexText(item: Pick<MergedItem, 'src' | 'name' | 'cat'>): string {
-  return norm(brandPrefix(item) + item.name + item.cat)
+export function indexText(item: Pick<MergedItem, 'src' | 'name' | 'cat'> & { storeName?: string }): string {
+  return norm(brandPrefix(item) + (item.storeName ?? '') + item.name + item.cat)
 }
 
 function isSubsequence(hay: string, needle: string): boolean {
@@ -63,6 +63,7 @@ export function recentCounts(logs: Iterable<Pick<LogRecord, 'deleted' | 'item_id
   const map = new Map<string, number>()
   for (const l of logs) {
     if (l.deleted) continue
+    if (!l.item_id) continue
     if (l.day < from || l.day > today) continue
     map.set(l.item_id, (map.get(l.item_id) ?? 0) + 1)
   }
@@ -74,6 +75,7 @@ export function recentOrder(logs: Iterable<Pick<LogRecord, 'deleted' | 'item_id'
   const last = new Map<string, string>()
   for (const l of logs) {
     if (l.deleted) continue
+    if (!l.item_id) continue
     if (l.day < from || l.day > today) continue
     const prev = last.get(l.item_id)
     if (!prev || l.ts > prev) last.set(l.item_id, l.ts)
@@ -84,15 +86,29 @@ export function recentOrder(logs: Iterable<Pick<LogRecord, 'deleted' | 'item_id'
 function passesFilter(item: MergedItem, filter: SearchFilter): boolean {
   if (filter === 'all') return true
   if (filter === 'fav') return item.fav
+  if (filter === 'store') return item.storeId !== ''
   if (filter === '711') return item.src === '711'
   if (filter === 'familymart') return item.src === 'familymart'
   return true
 }
 
+export function matchingStores(
+  stores: StoreRecord[],
+  query: string,
+): StoreRecord[] {
+  const q = norm(query)
+  if (!q) return []
+  return stores.filter((s) => {
+    if (s.deleted) return false
+    const n = norm(s.name)
+    return matchScore(n, q) > 0
+  })
+}
+
 export type IndexedItem = { item: MergedItem; text: string }
 
 export function buildIndex(items: MergedItem[]): IndexedItem[] {
-  return items.map((item) => ({ item, text: indexText(item) }))
+  return items.map((item) => ({ item, text: indexText({ ...item, storeName: item.storeName }) }))
 }
 
 export function searchItems(

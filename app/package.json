@@ -15,7 +15,9 @@
     "typecheck": "tsc -b",
     "build:gas": "node scripts/build-gas.mjs",
     "build:catalog": "node scripts/build-catalog.mjs",
-    "e2e": "node e2e/real-click.mjs"
+    "e2e": "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 PLAYWRIGHT_DIR=/workspace/photo-repro/node_modules/playwright node e2e/real-click.mjs",
+    "deploy": "./scripts/deploy-gh-pages.sh",
+    "deploy:gas": "./scripts/deploy-gas.sh"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -34,6 +36,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "fake-indexeddb": "^6.2.5",
     "jsdom": "^26.1.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",

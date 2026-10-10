@@ -28,3 +28,11 @@ test('重複 log id 成功且只有一列', () => {
   const data = env.call({ action: 'read' })
   expect(data.logs.filter((r: { id: string }) => r.id === 'log-1')).toHaveLength(1)
 })
+
+test('快速記錄缺營養素拒收；qty 不是 1 拒收；四項為 0 可以', () => {
+  const { call } = readyGas()
+  const quick = { id: 'q1', ts: '2026-10-10T12:00:00+08:00', day: '2026-10-10', item_id: '', name: '', src: '其他', qty: 1, kcal: 0, protein: 0, fat: 0, carb: 0, source: 'quick' }
+  expect(call({ action: 'append', table: 'Logs', record: { ...quick, protein: null } }).error).toBe('bad_record')
+  expect(call({ action: 'append', table: 'Logs', record: { ...quick, id: 'q2', qty: 2 } }).error).toBe('bad_record')
+  expect(call({ action: 'append', table: 'Logs', record: { ...quick, id: 'q3' } }).ok).toBe(true)
+})

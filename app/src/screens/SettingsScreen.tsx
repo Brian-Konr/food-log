@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { formatInt } from '@/lib/format'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
@@ -17,6 +17,8 @@ export function SettingsScreen(props: {
   onSetConfig: (key: string, value: string) => void
   onToast: (msg: string) => void
   onEditConnection?: () => void
+  badge?: ReactNode
+  failedKeys?: Record<string, { onRetry: () => void; onDiscard: () => void }>
 }) {
   const [edit, setEdit] = useState<(typeof TARGETS)[number] | null>(null)
   const [val, setVal] = useState('')
@@ -60,14 +62,25 @@ export function SettingsScreen(props: {
 
   return (
     <div className="mx-auto w-full max-w-xl px-4 pb-[calc(var(--tabbar-h)+var(--safe-bottom)+16px)] pt-2">
-      <h1 className="text-[34px] font-bold">設定</h1>
+      <div className="sticky top-0 z-20 flex items-start justify-between bg-background">
+        <h1 className="text-[34px] font-bold">設定</h1>
+        {props.badge}
+      </div>
       <h2 className="mt-6 text-muted-foreground">每日目標</h2>
       <div className="mt-2 overflow-hidden rounded-2xl bg-card">
         {TARGETS.map((t) => (
-          <button key={t.key} type="button" className="flex min-h-[52px] w-full items-center justify-between px-4" onClick={() => { setEdit(t); setVal(props.config[t.key] ?? '') }}>
-            <span>{t.label}</span>
-            <span className="tnum text-muted-foreground">{props.config[t.key] ? `${formatInt(Number(props.config[t.key]))} ${t.key === 'target_kcal' ? 'kcal' : 'g'}` : '未設定'} ›</span>
-          </button>
+          <div key={t.key} className="border-b border-border last:border-0">
+            <button type="button" className="flex min-h-[52px] w-full items-center justify-between px-4" onClick={() => { setEdit(t); setVal(props.config[t.key] ?? '') }}>
+              <span>{t.label}</span>
+              <span className="tnum text-muted-foreground">{props.config[t.key] ? `${formatInt(Number(props.config[t.key]))} ${t.key === 'target_kcal' ? 'kcal' : 'g'}` : '未設定'} ›</span>
+            </button>
+            {props.failedKeys?.[t.key] && (
+              <div className="flex items-center gap-3 px-4 pb-2 text-destructive">
+                <button type="button" className="h-11" onClick={props.failedKeys[t.key].onRetry}>沒有存到 · 重試</button>
+                <button type="button" className="h-11" onClick={props.failedKeys[t.key].onDiscard}>捨棄</button>
+              </div>
+            )}
+          </div>
         ))}
       </div>
       <h2 className="mt-6 text-muted-foreground">每日消耗</h2>
@@ -90,6 +103,12 @@ export function SettingsScreen(props: {
         <p className="mt-2 text-muted-foreground">InBody 的基礎代謝 × 活動量估算，可以自己改。趨勢頁用它算赤字（每日消耗 − 攝取）。</p>
         {tdeeErr && <p id="tdee-err" className="mt-2 text-destructive">請輸入 1,200 到 5,000 之間的數字</p>}
         {hint && <p className={cn('mt-2', tdeeN != null && tdeeN - targetKcal < 0 && 'text-[var(--over)]')}>{hint}</p>}
+        {props.failedKeys?.tdee && (
+          <div className="mt-2 flex items-center gap-3 text-destructive">
+            <button type="button" className="h-11" onClick={props.failedKeys.tdee.onRetry}>沒有存到 · 重試</button>
+            <button type="button" className="h-11" onClick={props.failedKeys.tdee.onDiscard}>捨棄</button>
+          </div>
+        )}
       </div>
       <h2 className="mt-6 text-muted-foreground">提醒（Kyujin 傳訊息）</h2>
       <div className="mt-2 rounded-2xl bg-card p-4">

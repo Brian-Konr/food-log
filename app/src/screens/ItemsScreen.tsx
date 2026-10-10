@@ -1,20 +1,34 @@
-import type { MergedItem } from '@/types'
+import type { MergedItem, StoreRecord } from '@/types'
 import { StarOff, Trash2 } from 'lucide-react'
 import { ResultRow } from '@/components/ResultRow'
+import { formatMd } from '@/lib/format'
+import { SyncBadge } from '@/components/SyncBadge'
+import type { LoadState } from '@/data/loadstate'
 
 export function ItemsScreen(props: {
   items: MergedItem[]
+  stores: StoreRecord[]
   onUnfav: (item: MergedItem) => void
   onOpenPortion: (item: MergedItem) => void
   onEdit: (item: MergedItem) => void
   onDelete: (item: MergedItem) => void
   onCreate: () => void
+  onOpenStore: (id: string) => void
+  loadState: LoadState
+  pending: number
+  online: boolean
+  onRetry: () => void
+  retrying?: boolean
 }) {
   const fav = props.items.filter((i) => i.fav)
-  const mine = props.items.filter((i) => i.src === 'custom')
+  const mine = props.items.filter((i) => i.src === 'custom' && i.storeId === '')
+  const liveStores = props.stores.filter((s) => !s.deleted)
   return (
     <div className="mx-auto w-full max-w-xl px-4 pb-[calc(var(--tabbar-h)+var(--safe-bottom)+16px)] pt-2">
-      <h1 className="text-[34px] font-bold">品項</h1>
+      <div className="sticky top-0 z-20 flex items-start justify-between bg-background">
+        <h1 className="text-[34px] font-bold">品項</h1>
+        <SyncBadge loadState={props.loadState} pending={props.pending} online={props.online} onRetry={props.onRetry} retrying={props.retrying} />
+      </div>
       <h2 className="mt-4 font-bold">收藏</h2>
       <div className="mt-2 overflow-hidden rounded-[var(--radius)] border border-border bg-card">
         {fav.length === 0 ? <p className="px-4 py-4 text-muted-foreground">還沒有收藏</p> : fav.map((i) => (
@@ -25,6 +39,19 @@ export function ItemsScreen(props: {
             </button>
           </div>
         ))}
+      </div>
+      <h2 className="mt-6 font-bold">店家</h2>
+      <div className="mt-2 overflow-hidden rounded-[var(--radius)] border border-border bg-card">
+        {liveStores.length === 0 ? <p className="px-4 py-4 text-muted-foreground">還沒有店家</p> : liveStores.map((s) => {
+          const n = props.items.filter((i) => i.storeId === s.id).length
+          const last = s.last_eaten_at ? `上次 ${formatMd(s.last_eaten_at)}` : '還沒吃過'
+          return (
+            <button key={s.id} type="button" className="flex min-h-[60px] w-full items-center justify-between border-b border-border px-4 text-left last:border-0" onClick={() => props.onOpenStore(s.id)}>
+              <span className="font-semibold">{s.name}</span>
+              <span className="text-muted-foreground">{n} 個品項 · {last}</span>
+            </button>
+          )
+        })}
       </div>
       <h2 className="mt-6 font-bold">我的品項</h2>
       <div className="mt-2 overflow-hidden rounded-[var(--radius)] border border-border bg-card">
