@@ -235,7 +235,11 @@ export default function App(props: AppProps = {}) {
       {tab === 'items' && (
         <ItemsScreen
           items={items}
-          onUnfav={(i) => void toggleFav(i)}
+          onUnfav={(i) => {
+            void toggleFav(i)
+            showToast(`已取消收藏 ${i.name}`, () => toggleFav({ ...i, fav: false }))
+          }}
+          onOpenPortion={(i) => setPortionItem(i)}
           onEdit={(i) => { setItemForm(i); setItemFormOpen(true) }}
           onDelete={(i) => {
             void fl.api?.remove('Items', i.id)

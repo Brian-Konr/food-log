@@ -1,9 +1,11 @@
 import type { MergedItem } from '@/types'
+import { StarOff, Trash2 } from 'lucide-react'
 import { ResultRow } from '@/components/ResultRow'
 
 export function ItemsScreen(props: {
   items: MergedItem[]
   onUnfav: (item: MergedItem) => void
+  onOpenPortion: (item: MergedItem) => void
   onEdit: (item: MergedItem) => void
   onDelete: (item: MergedItem) => void
   onCreate: () => void
@@ -17,8 +19,10 @@ export function ItemsScreen(props: {
       <div className="mt-2 overflow-hidden rounded-[var(--radius)] border border-border bg-card">
         {fav.length === 0 ? <p className="px-4 py-4 text-muted-foreground">還沒有收藏</p> : fav.map((i) => (
           <div key={i.id} className="flex items-center border-b border-border last:border-0">
-            <div className="min-w-0 flex-1"><ResultRow item={i} onSelect={props.onEdit} /></div>
-            <button type="button" className="h-11 px-3" onClick={() => props.onUnfav(i)}>取消收藏</button>
+            <div className="min-w-0 flex-1"><ResultRow item={i} onSelect={props.onOpenPortion} /></div>
+            <button type="button" aria-label={`取消收藏 ${i.name}`} className="grid size-11 shrink-0 place-items-center text-muted-foreground active:bg-accent" onClick={() => props.onUnfav(i)}>
+              <StarOff className="size-5" aria-hidden />
+            </button>
           </div>
         ))}
       </div>
@@ -29,7 +33,9 @@ export function ItemsScreen(props: {
             <div className="min-w-0 flex-1">
               <ResultRow item={i} onSelect={props.onEdit} />
             </div>
-            <button type="button" className="h-11 px-3 text-destructive" onClick={() => props.onDelete(i)}>刪除</button>
+            <button type="button" aria-label={`刪除 ${i.name}`} className="grid size-11 shrink-0 place-items-center text-muted-foreground active:bg-accent" onClick={() => props.onDelete(i)}>
+              <Trash2 className="size-5" aria-hidden />
+            </button>
           </div>
         ))}
       </div>
