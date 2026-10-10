@@ -5,7 +5,8 @@
  * node scripts/fetch-fam-details.mjs --input <fam_all.json> --output <fam_details.jsonl>
  *
  * FAM_ITEM_URL 未設定：印「尚未設定 FAM_ITEM_URL，不打網路」，exit 0。
- * 有設定時，URL 裡的 {cmno} 換成該筆 CMNO。每請求間隔 ≥500 ms。逾時 20 秒。
+ * 有設定時：URL 含 {cmno} 就換成該筆 CMNO 用 GET；不含 {cmno} 就用 POST，body 是 {"CMNO": "<cmno>"}
+ * （全家食安網的 ws/QueryFsProductByItem 是這種）。每請求間隔 ≥500 ms。逾時 20 秒。
  */
 import { readFileSync, existsSync, appendFileSync } from 'node:fs'
 import { parseNote, flattenFamList } from './catalog-note.mjs'
@@ -16,7 +17,9 @@ function arg(name, fallback) {
 }
 
 export function nutrientsFromDetail(json) {
-  const n = json && json.NUTRIENTS && json.NUTRIENTS[0] ? json.NUTRIENTS[0] : {}
+  // 全家 QueryFsProductByItem 回 { LIST: [{ NUTRIENTS: [...] }] }；也接受直接帶 NUTRIENTS 的物件
+  const src = json && Array.isArray(json.LIST) && json.LIST[0] ? json.LIST[0] : json
+  const n = src && src.NUTRIENTS && src.NUTRIENTS[0] ? src.NUTRIENTS[0] : {}
   const num = (v) => {
     if (v === '' || v == null) return null
     const x = Number(v)
@@ -50,11 +53,21 @@ async function main() {
   const have = existsSync(output) ? existingCmnos(readFileSync(output, 'utf8')) : new Set()
   for (const it of items) {
     if (have.has(it.CMNO)) continue
-    const url = urlTpl.replace('{cmno}', encodeURIComponent(it.CMNO))
+    const isGet = urlTpl.includes('{cmno}')
+    const url = isGet ? urlTpl.replace('{cmno}', encodeURIComponent(it.CMNO)) : urlTpl
+    const origin = new URL(url).origin
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), 20_000)
     try {
-      const res = await fetch(url, { signal: ctrl.signal })
+      const headers = {
+        'Accept': 'application/json, text/plain, */*',
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+        'Origin': origin,
+        'Referer': origin + '/',
+      }
+      const res = isGet
+        ? await fetch(url, { signal: ctrl.signal, headers })
+        : await fetch(url, { method: 'POST', signal: ctrl.signal, headers: { ...headers, 'Content-Type': 'application/json;charset=UTF-8' }, body: JSON.stringify({ CMNO: it.CMNO }) })
       if (!res.ok) {
         console.error(`HTTP ${res.status} cmno=${it.CMNO}`)
         continue
