@@ -13,7 +13,7 @@ export function TrendKpi(props: {
       <div className="text-base text-muted-foreground">{props.label}</div>
       <div className={cn('text-[22px] font-bold tnum', props.over && 'text-[var(--over)]', props.protein && 'text-[var(--macro-protein)]')}>
         {props.value}
-        {props.unit && <span className="ml-1 text-base font-medium text-muted-foreground">{props.unit}</span>}
+        {props.unit && ' '}{props.unit && <span className="text-base font-medium text-muted-foreground">{props.unit}</span>}
       </div>
     </div>
   )

@@ -43,7 +43,7 @@ export function TrendsScreen(props: {
   const [table, setTable] = useState(false)
 
   return (
-    <div className="px-4 pb-[calc(var(--tabbar-h)+var(--safe-bottom)+16px)] pt-2">
+    <div className="mx-auto w-full max-w-xl px-4 pb-[calc(var(--tabbar-h)+var(--safe-bottom)+16px)] pt-2">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-[34px] font-bold">趨勢</h1>
@@ -67,8 +67,12 @@ export function TrendsScreen(props: {
           {s.avgDeficit != null && s.avgDeficit < 0 && <p className="mt-1 text-[var(--over)]">{deficitLabel}</p>}
           {s.incompleteDays > 0 && <p className="mt-1 text-muted-foreground">不含記錄不完整的 {s.incompleteDays} 天</p>}
           {(props.config.tdee ?? '') === '' && <p className="mt-1 text-muted-foreground">先到設定填每日消耗，就能看到赤字</p>}
-          <h2 className="mt-6 font-bold">每日熱量・近 4 週</h2>
+          <section className="mt-6 rounded-[var(--radius)] border border-border bg-card p-4">
+          <h2 className="font-bold">每日熱量・近 4 週</h2>
           <KcalBarChart slots={view.slots} target={targets.kcal} summary={summary} incompleteN={view.chartIncompleteN} />
+          <p className="mt-2 flex items-center gap-2 text-muted-foreground" aria-hidden="true">
+            <span className="inline-block w-5 border-t-2 border-dashed border-[var(--chart-goal)]" />目標 {formatInt(targets.kcal)} kcal
+          </p>
           <button type="button" className="mt-2 h-11" onClick={() => setTable((v) => !v)}>看每日數字</button>
           {table && (
             <table className="mt-2 w-full text-left">
@@ -86,6 +90,7 @@ export function TrendsScreen(props: {
               </tbody>
             </table>
           )}
+          </section>
         </>
       )}
 
@@ -96,10 +101,15 @@ export function TrendsScreen(props: {
             <button type="button" className="h-11 px-2" onClick={props.onWeight}>＋ 記體重</button>
           </div>
           <div className="text-[34px] font-bold tnum">{w.endAvg == null ? '—' : formatKg(w.endAvg)} kg</div>
-          <p className="text-muted-foreground">kg · 7 日平均，4 週{deltaWord(w.deltaKg)}</p>
-          <WeightChart series={w} today={props.today} />
+          <p className="text-muted-foreground">7 日平均，4 週{deltaWord(w.deltaKg)}</p>
+          <WeightChart series={w} today={props.today} summary={`7 日平均 ${w.endAvg == null ? '—' : formatKg(w.endAvg)} kg，4 週${deltaWord(w.deltaKg)}`} />
+          <p className="mt-1 flex flex-wrap gap-x-3 text-muted-foreground" aria-hidden="true">
+            <span><span className="mr-1 inline-block size-2 rounded-full bg-[var(--chart-weight)]" />每日</span>
+            <span><span className="mr-1 inline-block w-4 border-t-[3px] border-[var(--chart-weight-avg)] align-middle" />7 日平均</span>
+            {w.expectedDeltaKg != null && <span><span className="mr-1 inline-block w-4 border-t-2 border-dashed border-[var(--chart-expected)] align-middle" />預期</span>}
+          </p>
           {w.expectedDeltaKg != null && w.deltaKg != null && (
-            <p className="text-muted-foreground">依赤字預期{deltaWord(w.expectedDeltaKg).replace(' kg', '')}，實際{deltaWord(w.deltaKg).replace(' kg', '')}</p>
+            <p className="text-muted-foreground">依赤字預期{deltaWord(w.expectedDeltaKg)}，實際{deltaWord(w.deltaKg)}</p>
           )}
           <span className="sr-only">
             體重 7 日平均 {w.endAvg == null ? '—' : formatKg(w.endAvg)} kg，4 週{deltaWord(w.deltaKg)}

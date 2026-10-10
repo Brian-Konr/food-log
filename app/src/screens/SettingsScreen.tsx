@@ -27,7 +27,8 @@ export function SettingsScreen(props: {
   const [m2, setM2] = useState(meals[1] || '')
   const [wt, setWt] = useState(props.config.remind_weight_time || '')
   const targetKcal = Number(props.config.target_kcal) || 0
-  const tdeeN = tdee.trim() === '' ? null : Number(tdee)
+  const tdeeValid = /^\d+$/.test(tdee.trim()) && Number(tdee) >= 1200 && Number(tdee) <= 5000
+  const tdeeN = tdeeValid ? Number(tdee) : null
   const hint = tdeeN == null ? null : tdeeN - targetKcal > 0
     ? `比熱量目標多 ${formatInt(tdeeN - targetKcal)} kcal，代表每天的預期赤字約 ${formatInt(tdeeN - targetKcal)} kcal。`
     : tdeeN - targetKcal < 0
@@ -44,23 +45,28 @@ export function SettingsScreen(props: {
   }
 
   return (
-    <div className="px-4 pb-[calc(var(--tabbar-h)+var(--safe-bottom)+16px)] pt-2">
+    <div className="mx-auto w-full max-w-xl px-4 pb-[calc(var(--tabbar-h)+var(--safe-bottom)+16px)] pt-2">
       <h1 className="text-[34px] font-bold">設定</h1>
       <h2 className="mt-6 text-muted-foreground">每日目標</h2>
       <div className="mt-2 overflow-hidden rounded-2xl bg-card">
         {TARGETS.map((t) => (
           <button key={t.key} type="button" className="flex min-h-[52px] w-full items-center justify-between px-4" onClick={() => { setEdit(t); setVal(props.config[t.key] ?? '') }}>
             <span>{t.label}</span>
-            <span className="tnum text-muted-foreground">{props.config[t.key]} ›</span>
+            <span className="tnum text-muted-foreground">{props.config[t.key] ? `${formatInt(Number(props.config[t.key]))} ${t.key === 'target_kcal' ? 'kcal' : 'g'}` : '未設定'} ›</span>
           </button>
         ))}
       </div>
       <h2 className="mt-6 text-muted-foreground">每日消耗</h2>
       <div className="mt-2 rounded-2xl bg-card p-4">
         <div className="flex items-center gap-2">
+          <label htmlFor="tdee" className="sr-only">每日消耗（kcal）</label>
           <input
+            id="tdee"
             inputMode="numeric"
+            aria-invalid={tdeeErr}
+            aria-describedby={tdeeErr ? 'tdee-err' : undefined}
             value={tdee}
+            onInput={() => tdeeErr && setTdeeErr(false)}
             onChange={(e) => setTdee(e.target.value)}
             onBlur={saveTdee}
             className={cn('h-12 flex-1 rounded-xl border px-3', tdeeErr && 'border-destructive')}
@@ -68,7 +74,7 @@ export function SettingsScreen(props: {
           <span>kcal</span>
         </div>
         <p className="mt-2 text-muted-foreground">InBody 的基礎代謝 × 活動量估算，可以自己改。趨勢頁用它算赤字（每日消耗 − 攝取）。</p>
-        {tdeeErr && <p className="text-destructive">請輸入 1,200 到 5,000 之間的數字</p>}
+        {tdeeErr && <p id="tdee-err" className="mt-2 text-destructive">請輸入 1,200 到 5,000 之間的數字</p>}
         {hint && <p className={cn('mt-2', tdeeN != null && tdeeN - targetKcal < 0 && 'text-[var(--over)]')}>{hint}</p>}
       </div>
       <h2 className="mt-6 text-muted-foreground">提醒（Kyujin 傳訊息）</h2>
@@ -99,7 +105,7 @@ export function SettingsScreen(props: {
         <SheetContent>
           <div className="px-4 pb-4">
             <SheetTitle>{edit?.label}</SheetTitle>
-            <input inputMode="decimal" className="mt-4 h-12 w-full rounded-xl border px-3" value={val} onChange={(e) => setVal(e.target.value)} />
+            <input aria-label={`${edit?.label ?? ''}目標（${edit?.key === 'target_kcal' ? 'kcal' : 'g'}）`} inputMode="decimal" className="mt-4 h-12 w-full rounded-xl border px-3" value={val} onChange={(e) => setVal(e.target.value)} />
             <button
               type="button"
               className="mt-4 h-14 w-full rounded-[28px] bg-primary font-bold text-primary-foreground"

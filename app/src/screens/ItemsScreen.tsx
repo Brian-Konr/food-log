@@ -13,7 +13,7 @@ export function ItemsScreen(props: {
   const fav = props.items.filter((i) => i.fav)
   const mine = props.items.filter((i) => i.src === 'custom')
   return (
-    <div className="px-4 pb-[calc(var(--tabbar-h)+var(--safe-bottom)+16px)] pt-2">
+    <div className="mx-auto w-full max-w-xl px-4 pb-[calc(var(--tabbar-h)+var(--safe-bottom)+16px)] pt-2">
       <h1 className="text-[34px] font-bold">品項</h1>
       <h2 className="mt-4 font-bold">收藏</h2>
       <div className="mt-2 overflow-hidden rounded-[var(--radius)] border border-border bg-card">

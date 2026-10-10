@@ -9,7 +9,8 @@ export function SearchDock(props: {
 }) {
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-[calc(var(--tabbar-h)+var(--safe-bottom))] z-30 bg-gradient-to-t from-background via-background/90 to-transparent px-4 pb-2.5 pt-3.5">
-      <div className="pointer-events-auto mb-2.5 flex gap-2 overflow-x-auto" style={{ height: 44 }}>
+      <div className="mx-auto w-full max-w-xl">
+      <div className="pointer-events-auto mb-2.5 flex gap-2 overflow-x-auto [@media(max-height:500px)]:hidden" style={{ height: 44 }}>
         {props.chips.map((c) => (
           <button
             key={c.id}
@@ -30,6 +31,7 @@ export function SearchDock(props: {
       >
         搜尋 7-11、全家、我的品項
       </button>
+      </div>
     </div>
   )
 }

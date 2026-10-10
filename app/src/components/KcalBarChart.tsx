@@ -16,7 +16,7 @@ export function KcalBarChart(props: {
       {picked && (
         <p className="mb-2">{formatShortDate(picked.day)} {formatInt(picked.kcal)} kcal · 蛋白質 {formatMacro(picked.protein)} g</p>
       )}
-      <svg role="img" aria-label={props.summary} viewBox="0 0 280 120" className="h-40 w-full">
+      <svg role="img" aria-label={props.summary} viewBox="0 0 280 120" overflow="visible" className="h-40 w-full">
         <title>{props.summary}</title>
         <defs>
           <pattern id="inc" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -34,8 +34,8 @@ export function KcalBarChart(props: {
               {i % 7 === 0 && i !== 0 && <line x1={x} y1="8" x2={x} y2="100" stroke="var(--border)" strokeWidth="1" />}
               <rect x={x + 1} y={8} width="8" height="92" fill="transparent" onClick={() => setSel(s.day)} />
               {h > 0 && <rect x={x + 2} y={y} width="6" height={h} fill={fill} opacity={opacity} stroke={s.slot === 'incomplete' ? 'var(--chart-incomplete)' : 'none'} />}
-              {s.slot === 'incomplete' && <text x={x + 5} y={y - 2} textAnchor="middle" fontSize="8" fill="var(--chart-incomplete)">!</text>}
-              {s.slot === 'today' && <text x={x + 5} y="118" textAnchor="middle" fontSize="8" fill="var(--muted-foreground)">今天</text>}
+              {s.slot === 'incomplete' && <text x={x + 5} y={Math.max(y - 2, 13)} textAnchor="middle" fontSize="14" fontWeight="700" fill="var(--chart-incomplete)">!</text>}
+              {s.slot === 'today' && <text x={Math.min(x + 5, 280)} y="118" textAnchor={i >= props.slots.length - 2 ? 'end' : 'middle'} fontSize="14" fill="var(--muted-foreground)">今天</text>}
             </g>
           )
         })}

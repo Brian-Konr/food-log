@@ -41,7 +41,7 @@ export function SearchSheet(props: {
   const q = deferred.trim()
   const fallbackRef = useRef<HTMLInputElement>(null)
   const inputRef = props.inputRef ?? fallbackRef
-  const remainLine = `${formatRemain(props.remain.kcal, 'kcal')} · ${formatRemain(props.remain.protein, 'g')} 蛋白質`
+  const remainLine = `${props.remain.kcal < 0 ? '' : '還剩 '}${formatRemain(props.remain.kcal, 'kcal')} · ${formatRemain(props.remain.protein, 'g')} 蛋白質`
 
   return (
     <Sheet open={props.open} onOpenChange={props.onOpenChange}>

@@ -1,1 +1,7 @@
 @import "./styles/tokens.css";
+
+/* 實際 dock 高：上 14＋膠囊 44＋間距 10＋搜尋 48＋下 10（tokens 的 116 少算下方留白） */
+:root { --dock-h: 126px; }
+@media (max-height: 500px) {
+  :root { --dock-h: 72px; } /* 矮畫面收起常吃膠囊，只留搜尋列 */
+}

@@ -56,6 +56,16 @@ try {
   await pg.getByRole('button', { name: /法式香草嫩雞胸/ }).last().click(); await wait(pg, 600)
   if ((await pg.getByRole('button', { name: /^1\.5/ }).first().getAttribute('aria-pressed')) !== 'true') fail('常吃膠囊沒有帶上次的 1.5 份')
   await pg.keyboard.press('Escape'); await wait(pg, 400)
+  step('設定：每日消耗 900 要擋下')
+  await pg.getByRole('button', { name: /設定/ }).last().click(); await wait(pg, 400)
+  await pg.getByLabel('每日消耗（kcal）').click(); await pg.keyboard.type('900')
+  await pg.getByRole('heading', { name: '設定' }).click(); await wait(pg, 400)
+  if (!(await pg.getByText('請輸入 1,200 到 5,000 之間的數字').isVisible())) fail('每日消耗 900 沒有被擋下')
+  step('橫向 844×390：搜尋區不蓋住摘要')
+  await pg.getByRole('button', { name: /今天/ }).last().click(); await pg.setViewportSize({ width: 844, height: 390 }); await wait(pg, 500)
+  const dockH = await pg.evaluate(() => document.querySelector('.fixed.inset-x-0')?.getBoundingClientRect().height ?? 0)
+  if (dockH > 100) fail(`橫向搜尋區太高：${dockH}px`)
+  await pg.screenshot({ path: '../qa-v1/e2e-landscape.png' })
 } finally { await b.close() }
 if (errors.length) { console.log('console errors:'); errors.forEach((e) => console.log('  ', e.slice(0, 200))); process.exit(1) }
 console.log('OK：沒有 console error')

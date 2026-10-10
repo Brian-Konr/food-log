@@ -180,23 +180,26 @@ export default function App(props: AppProps = {}) {
     showToast(formatLoggedToast(item.name, qty, args.grams), () => api.remove('Logs', log.id))
   }, [fl.api, now])
 
-  async function toggleFav(item: MergedItem) {
+  async function setFav(item: MergedItem, fav: boolean) {
     const api = fl.api
     if (!api) return
     if (item.src === 'custom') {
       const rec: ItemRecord = {
         id: item.id, ts: taipeiIso(now()), deleted: false, updated_at: '', kind: '自建', base_id: '', src: item.sheetSrc,
         name: item.name, serving: item.serving, serving_g: item.servingG, kcal: item.kcal,
-        protein: item.protein ?? 0, fat: item.fat ?? 0, carb: item.carb ?? 0, fav: !item.fav, created_by: item.createdBy ?? 'app',
+        protein: item.protein ?? 0, fat: item.fat ?? 0, carb: item.carb ?? 0, fav, created_by: item.createdBy ?? 'app',
       }
       await api.upsertItem(rec)
     } else {
-      const ids = new Set((config.fav_ids || '').split(',').map((s) => s.trim()).filter(Boolean))
-      if (ids.has(item.id)) ids.delete(item.id)
-      else ids.add(item.id)
+      // 讀最新的 fav_ids（復原時閉包裡的 config 可能是舊的）
+      const latest = api.peek()?.config.fav_ids ?? config.fav_ids ?? ''
+      const ids = new Set(latest.split(',').map((s) => s.trim()).filter(Boolean))
+      if (fav) ids.add(item.id)
+      else ids.delete(item.id)
       await api.setConfig('fav_ids', [...ids].join(','))
     }
   }
+  const toggleFav = (item: MergedItem) => setFav(item, !item.fav)
 
   if (needSetup) {
     return (
@@ -237,8 +240,8 @@ export default function App(props: AppProps = {}) {
         <ItemsScreen
           items={items}
           onUnfav={(i) => {
-            void toggleFav(i)
-            showToast(`已取消收藏 ${i.name}`, () => toggleFav({ ...i, fav: false }))
+            void setFav(i, false)
+            showToast(`已取消收藏 ${i.name}`, () => setFav(i, true))
           }}
           onOpenPortion={(i) => setPortionItem(i)}
           onEdit={(i) => { setItemForm(i); setItemFormOpen(true) }}

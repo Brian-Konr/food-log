@@ -16,7 +16,7 @@ export function TodayScreen(props: {
 }) {
   const live = props.logs.filter((l) => !l.deleted).sort((a, b) => a.ts.localeCompare(b.ts))
   return (
-    <div className="px-4 pb-[calc(var(--dock-h)+var(--tabbar-h)+var(--safe-bottom)+16px)] pt-1">
+    <div className="mx-auto w-full max-w-xl px-4 pb-[calc(var(--dock-h)+var(--tabbar-h)+var(--safe-bottom)+16px)] pt-1">
       <div className="flex items-center justify-between py-2">
         <span className="font-medium text-muted-foreground">{formatLongDate(props.today)}</span>
         <button type="button" aria-label="記體重" onClick={props.onWeight} className="grid size-11 place-items-center text-muted-foreground">
