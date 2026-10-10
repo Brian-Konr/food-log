@@ -75,7 +75,7 @@ export function useFoodLog(opts: {
     return () => clearTimeout(t)
   }, [failStreak, browserOnline, refresh])
 
-  const data = snap ? decodeSnapshot(snap) : null
+  const data = useMemo(() => (snap ? decodeSnapshot(snap) : null), [snap])
   const items = useMemo(
     () => mergeCatalog(snapshotItems, data?.items ?? [], parseFavIds(data?.config.fav_ids)),
     [snapshotItems, data],

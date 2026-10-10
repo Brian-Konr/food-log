@@ -14,7 +14,8 @@
     "test": "vitest run",
     "typecheck": "tsc -b",
     "build:gas": "node scripts/build-gas.mjs",
-    "build:catalog": "node scripts/build-catalog.mjs"
+    "build:catalog": "node scripts/build-catalog.mjs",
+    "e2e": "node e2e/real-click.mjs"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

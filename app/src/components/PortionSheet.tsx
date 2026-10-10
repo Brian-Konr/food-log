@@ -53,7 +53,9 @@ export function PortionSheet(props: {
     } else {
       setMode('qty'); setQty(last.qty); setGrams('')
     }
-  }, [props.open, item, props.logs])
+    // 只在打開或換品項時重設；logs 變動不能把使用者正在選的份量或打的數字清掉
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.open, item?.id])
 
   useEffect(() => {
     if (!props.open) return
@@ -172,6 +174,7 @@ export function PortionSheet(props: {
                   <button
                     key={q}
                     type="button"
+                    aria-pressed={mode === 'qty' && qty === q}
                     onClick={() => { setMode('qty'); setQty(q) }}
                     className={cn('h-12 flex-1 rounded-xl border border-border font-semibold', mode === 'qty' && qty === q && 'border-primary bg-primary text-primary-foreground')}
                   >

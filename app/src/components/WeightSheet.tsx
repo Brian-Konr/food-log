@@ -42,7 +42,9 @@ export function WeightSheet(props: {
     if (existing) { setKg(existing.kg); setRaw(formatKg(existing.kg)) }
     else if (latest) { setKg(latest.kg); setRaw(formatKg(latest.kg)) }
     else { setKg(null); setRaw('') }
-  }, [day, live, latest, props.open])
+    // 只在打開或換日期時帶入；資料重讀不能蓋掉正在調的數字
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [day, props.open])
 
   const existing = live.get(day)
   const valid = kg != null && kg >= 30 && kg <= 250 && round1(kg) === kg
@@ -78,7 +80,7 @@ export function WeightSheet(props: {
 
   return (
     <Sheet open={props.open} onOpenChange={props.onOpenChange}>
-      <SheetContent>
+      <SheetContent onOpenAutoFocus={(e) => e.preventDefault()}>
         <div className="px-4 pb-4">
           <SheetTitle>記體重</SheetTitle>
           {day !== props.today && <p className="text-muted-foreground">補記 {formatShortDate(day)}</p>}

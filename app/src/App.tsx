@@ -43,7 +43,8 @@ function parseTab(hash: string): { tab: Tab; weight: boolean } {
 
 export default function App(props: AppProps = {}) {
   const storage = props.storage ?? (typeof localStorage === 'undefined' ? undefined : localStorage)
-  const now = props.now ?? (() => Date.now())
+  // 穩定的參考：每次 render 都換新函式會讓 adapter／api 每次重建，造成無限重繪
+  const now = useMemo(() => props.now ?? (() => Date.now()), [props.now])
   const get = (k: string) => storage?.getItem(k) ?? null
   const set = (k: string, v: string) => storage?.setItem(k, v)
 
