@@ -14,17 +14,21 @@ class FakeSheet {
   getDataRange() { return { getValues: () => this.data.map((r) => { const w = this.getLastColumn(); return Array.from({ length: w }, (_, i) => r[i] ?? '') }) } }
   getRange(row: number, col: number, nr = 1, nc = 1) {
     const sh = this
-    return {
+    let text = false
+    const range = {
       getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => sh.data[row - 1 + i]?.[col - 1 + j] ?? '')),
       setValues: (vals: Cell[][]) => vals.forEach((r, i) => r.forEach((v, j) => sh.set(row + i, col + j, v))),
-      setValue: (v: Cell) => sh.set(row, col, v),
+      setValue: (v: Cell) => { sh.set(row, col, v, text); return range },
+      setNumberFormat: (f: string) => { text = f === '@'; if (text) sh.textCells.add(`${row}:${col}`); return range },
     }
+    return range
   }
-  set(row: number, col: number, v: Cell) {
+  textCells = new Set<string>()
+  set(row: number, col: number, v: Cell, text = false) {
     while (this.data.length < row) this.data.push([])
     const r = this.data[row - 1]
     while (r.length < col) r.push('')
-    r[col - 1] = sheetCoerce(v)
+    r[col - 1] = text || this.textCells.has(`${row}:${col}`) ? v : sheetCoerce(v)
   }
   appendRow(row: Cell[]) { this.data.push(row.map(sheetCoerce)) }
   setFrozenRows(n: number) { this.frozen = n }
@@ -34,6 +38,8 @@ function sheetCoerce(v: Cell): Cell {
   if (v === 'FALSE') return false
   if (typeof v === 'string' && v !== '' && !isNaN(Number(v))) return Number(v)
   if (typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d/.test(v)) return new VmDate(v)
+  // 真的試算表會把「12:30」轉成 1899-12-30 的時間
+  if (typeof v === 'string' && /^\d\d:\d\d$/.test(v)) return new VmDate(`1899-12-30T${v}:00+08:00`)
   return v
 }
 
@@ -87,7 +93,8 @@ export function loadGas(opts: { lockBusy?: boolean } = {}) {
       base64Encode: (bytes: number[] | Uint8Array) => Buffer.from(bytes).toString('base64'),
       newBlob: (bytes: number[], mime: string, name: string) => ({ bytes, mime, name }),
       getUuid: () => '00000000-0000-4000-8000-' + String(++uuid).padStart(12, '0'),
-      formatDate: (d: Date) => {
+      formatDate: (d: Date, _tz?: string, fmt?: string) => {
+        if (fmt === 'HH:mm') return new Date(d.getTime() + 8 * 3600e3).toISOString().slice(11, 16)
         const t = new Date(d.getTime() + 8 * 3600e3).toISOString().slice(0, 19)
         return t + '+08:00'
       },

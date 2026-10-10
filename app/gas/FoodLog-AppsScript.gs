@@ -481,7 +481,7 @@ function setConfig_(key, value, kyujin) {
   var existing = null;
   for (var j = 0; j < all.length; j++) if (String(all[j].key) === String(key)) existing = all[j];
   if (existing) {
-    sh.getRange(existing.__row, cols.indexOf('value') + 1).setValue(v);
+    sh.getRange(existing.__row, cols.indexOf('value') + 1).setNumberFormat('@').setValue(v);
     sh.getRange(existing.__row, cols.indexOf('updated_at') + 1).setValue(now);
   } else {
     sh.appendRow(cols.map(function (c) {
@@ -490,15 +490,24 @@ function setConfig_(key, value, kyujin) {
       if (c === 'updated_at') return now;
       return '';
     }));
+    sh.getRange(sh.getLastRow(), cols.indexOf('value') + 1).setNumberFormat('@').setValue(v);
   }
   return { ok: true };
+}
+
+// 試算表會把「12:30」自動轉成時間（Date），讀回來變成「Sat Dec 30 1899 …」，前端就顯示空白。
+// 寫入時把儲存格設成純文字；讀的時候若已經是 Date（舊資料），轉回台北時間 HH:mm。
+function configValueToString_(v) {
+  if (v === null || v === undefined) return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') return Utilities.formatDate(v, 'Asia/Taipei', 'HH:mm');
+  return String(v);
 }
 
 function readConfig_() {
   var cfg = {};
   DEFAULT_CONFIG.forEach(function (kv) { cfg[kv[0]] = kv[1]; });
   rows_('Config').forEach(function (r) {
-    if (r.key) cfg[r.key] = r.value === null || r.value === undefined ? '' : String(r.value);
+    if (r.key) cfg[r.key] = configValueToString_(r.value);
   });
   return cfg;
 }

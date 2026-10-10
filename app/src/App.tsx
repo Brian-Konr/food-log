@@ -30,6 +30,7 @@ export type AppProps = {
   catalogItems?: CatalogItem[]
   storage?: Storage
   now?: () => number
+  checkConnection?: (url: string, secret: string) => Promise<string | null>
 }
 
 function parseTab(hash: string): { tab: Tab; weight: boolean } {
@@ -205,6 +206,7 @@ export default function App(props: AppProps = {}) {
     return (
       <SetupScreen
         error={setupError}
+        check={props.checkConnection}
         onStart={(url, s) => {
           if (!url || !s) return
           set('foodlog.gasUrl', url)
@@ -352,10 +354,13 @@ export default function App(props: AppProps = {}) {
       {setupOpen && (
         <SetupScreen
           error={setupError}
+          initialUrl={gasUrl}
+          initialSecret={secret}
+          check={props.checkConnection}
+          onCancel={() => setSetupOpen(false)}
           onStart={(url, s) => {
-            set('foodlog.gasUrl', url); set('foodlog.secret', s); setGasUrl(url); setSecret(s); setMockMode(false); setSetupOpen(false)
+            set('foodlog.gasUrl', url); set('foodlog.secret', s); set('foodlog.mock', ''); setGasUrl(url); setSecret(s); setMockMode(false); setSetupOpen(false)
           }}
-          onMock={() => { set('foodlog.mock', '1'); setMockMode(true); setSetupOpen(false) }}
         />
       )}
       <UndoToast toast={toast} onGone={() => setToast(null)} dock={tab === 'today'} />

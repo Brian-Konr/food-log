@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { formatInt } from '@/lib/format'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
@@ -26,6 +26,20 @@ export function SettingsScreen(props: {
   const [m1, setM1] = useState(meals[0] || '')
   const [m2, setM2] = useState(meals[1] || '')
   const [wt, setWt] = useState(props.config.remind_weight_time || '')
+  // Config 是開 app 後才從後端讀回來的；讀回來時要把值帶進輸入框（之前只在第一次 render 讀，所以重開就是空的）
+  useEffect(() => { const m = (props.config.remind_meal_times || '').split(',').map((x) => x.trim()); setM1(m[0] || ''); setM2(m[1] || '') }, [props.config.remind_meal_times])
+  useEffect(() => { setWt(props.config.remind_weight_time || '') }, [props.config.remind_weight_time])
+  useEffect(() => { setTdee(props.config.tdee ?? '') }, [props.config.tdee])
+  // iOS 的時間選擇器常常不觸發 blur，所以選好就存，並給回饋
+  function saveMeals(a: string, b: string) {
+    const v = [a, b].filter(Boolean).join(',')
+    if (v === (props.config.remind_meal_times || '')) return
+    props.onSetConfig('remind_meal_times', v); props.onToast('已更新提醒時間')
+  }
+  function saveWeightTime(v: string) {
+    if (v === (props.config.remind_weight_time || '')) return
+    props.onSetConfig('remind_weight_time', v); props.onToast('已更新提醒時間')
+  }
   const targetKcal = Number(props.config.target_kcal) || 0
   const tdeeValid = /^\d+$/.test(tdee.trim()) && Number(tdee) >= 1200 && Number(tdee) <= 5000
   const tdeeN = tdeeValid ? Number(tdee) : null
@@ -79,9 +93,9 @@ export function SettingsScreen(props: {
       </div>
       <h2 className="mt-6 text-muted-foreground">提醒（Kyujin 傳訊息）</h2>
       <div className="mt-2 rounded-2xl bg-card p-4">
-        <label className="block">午餐<input type="time" className="mt-1 h-12 w-full rounded-xl border px-3" value={m1} onChange={(e) => setM1(e.target.value)} onBlur={() => props.onSetConfig('remind_meal_times', [m1, m2].filter(Boolean).join(','))} /></label>
-        <label className="mt-3 block">晚餐<input type="time" className="mt-1 h-12 w-full rounded-xl border px-3" value={m2} onChange={(e) => setM2(e.target.value)} onBlur={() => props.onSetConfig('remind_meal_times', [m1, m2].filter(Boolean).join(','))} /></label>
-        <label className="mt-3 block">量體重<input type="time" className="mt-1 h-12 w-full rounded-xl border px-3" value={wt} onChange={(e) => setWt(e.target.value)} onBlur={() => props.onSetConfig('remind_weight_time', wt)} /></label>
+        <label className="block">午餐<input type="time" className="mt-1 h-12 w-full rounded-xl border px-3" value={m1} onChange={(e) => { setM1(e.target.value); saveMeals(e.target.value, m2) }} /></label>
+        <label className="mt-3 block">晚餐<input type="time" className="mt-1 h-12 w-full rounded-xl border px-3" value={m2} onChange={(e) => { setM2(e.target.value); saveMeals(m1, e.target.value) }} /></label>
+        <label className="mt-3 block">量體重<input type="time" className="mt-1 h-12 w-full rounded-xl border px-3" value={wt} onChange={(e) => { setWt(e.target.value); saveWeightTime(e.target.value) }} /></label>
         <p className="mt-2 text-muted-foreground">App 不會推播，時間到了由 Kyujin 傳訊息</p>
       </div>
       <h2 className="mt-6 text-muted-foreground">外觀</h2>
@@ -97,7 +111,7 @@ export function SettingsScreen(props: {
         <>
           <h2 className="mt-6 text-muted-foreground">連線</h2>
           <button type="button" className="mt-2 flex min-h-[52px] w-full items-center justify-between rounded-2xl bg-card px-4" onClick={props.onEditConnection}>
-            <span>連線</span><span className="text-muted-foreground">›</span>
+            <span>後端連線設定</span><span className="text-muted-foreground">›</span>
           </button>
         </>
       )}
