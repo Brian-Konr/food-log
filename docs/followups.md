@@ -12,3 +12,5 @@
 - 份量 Sheet 頂部加「還剩」。
 - 份量 Sheet 按收藏後，星號要馬上變成實心。
 - 待真機驗證：iOS Safari 和加到主畫面的 PWA（safe area、日期選擇器、鍵盤會不會擋住）、VoiceOver、從編輯 Sheet 刪除紀錄、編輯自建品項。
+
+- （Ningning，2026-10-10）體重 Sheet 補記選完日期後按 Esc 關不掉（e2e 改用重新整理繞過），待查是 app 還是測試工具的行為。
