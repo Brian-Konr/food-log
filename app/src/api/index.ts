@@ -11,7 +11,7 @@ export type { Adapter } from './types'
 export type { Kv } from '@/data/kv'
 export { memoryKv } from '@/data/kv'
 
-type Queued = WriteOp & { qid: string; queuedAt: string; groupId?: string; label?: string }
+type Queued = WriteOp & { qid: string; queuedAt: string; groupId?: string; label?: string; sawNet?: boolean }
 export interface FailedWrite {
   op: WriteOp
   error: string
@@ -59,11 +59,12 @@ function unionByQid<T extends { qid?: string }>(a: T[], b: T[]): T[] {
 }
 
 function stripForSend(op: WriteOp): WriteOp {
-  const clone = JSON.parse(JSON.stringify(op)) as WriteOp & { qid?: string; queuedAt?: string; groupId?: string; label?: string }
+  const clone = JSON.parse(JSON.stringify(op)) as WriteOp & { qid?: string; queuedAt?: string; groupId?: string; label?: string; sawNet?: boolean }
   delete clone.qid
   delete clone.queuedAt
   delete clone.groupId
   delete clone.label
+  delete clone.sawNet
   const rec = 'record' in clone ? (clone as { record?: Record<string, unknown> }).record : undefined
   if (rec) for (const k of Object.keys(rec)) if (k.startsWith('__')) delete rec[k]
   return clone
@@ -95,8 +96,9 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
   let cacheMeta: CachedSnapshot | null = null
   let outbox: Queued[] = []
   let failed: FailedWrite[] = []
-  let retryHandles: ReturnType<typeof setTimeout>[] = []
-  let retriesArmed = false
+  let retryWave = 0
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
+  const RETRY_GAPS_MS = [2000, 5000, 15000]
 
   const status = (): ApiStatus => ({ pending: outbox.length, failed: [...failed], online, adapter: adapter.kind })
   const emit = () => { const s = status(); listeners.forEach((fn) => fn(s)) }
@@ -107,20 +109,28 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
   }
 
   function clearRetries() {
-    for (const h of retryHandles) clearTimeout(h)
-    retryHandles = []
-    retriesArmed = false
-  }
-
-  function armRetries() {
-    if (retriesArmed) return
-    retriesArmed = true
-    for (const ms of [2000, 5000, 15000]) {
-      retryHandles.push(setTimeout(() => { void flush() }, ms))
+    if (retryTimer != null) {
+      clearTimeout(retryTimer)
+      retryTimer = null
     }
+    retryWave = 0
   }
 
-  function applyOp(data: Snapshot, op: WriteOp, pending: boolean, meta?: { queuedAt?: string; failed?: boolean; message?: string }) {
+  function scheduleRetry(isNetwork: boolean) {
+    if (retryTimer != null) return
+    if (retryWave >= 3) {
+      if (isNetwork && outbox.length > 0) online = false
+      return
+    }
+    const gap = RETRY_GAPS_MS[retryWave]
+    retryWave += 1
+    retryTimer = setTimeout(() => {
+      retryTimer = null
+      void flush()
+    }, gap)
+  }
+
+  function applyOp(data: Snapshot, op: WriteOp, pending: boolean, meta?: { queuedAt?: string; failed?: boolean; message?: string; sawNet?: boolean }) {
     if (!data.stores) data.stores = []
     const mark = meta?.failed
       ? { __write: 'failed' as const, __queuedAt: meta.queuedAt, __failMessage: meta.message }
@@ -158,10 +168,13 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
       return
     }
     if (op.action === 'append') {
+      const rowMark = pending && meta?.sawNet ? { ...mark, __syncing: true as const } : mark
       const i = data.logs.findIndex((r) => r.id === op.record.id)
-      if (i < 0) data.logs.push({ ...op.record, ...mark })
-      else if (!pending && !meta?.failed) {
-        const { __pending: _, __write: _w, ...rest } = data.logs[i]
+      if (i < 0) data.logs.push({ ...op.record, ...rowMark })
+      else if (pending || meta?.failed) {
+        data.logs[i] = { ...data.logs[i], ...op.record, ...rowMark }
+      } else {
+        const { __pending: _, __write: _w, __syncing: _s, ...rest } = data.logs[i]
         data.logs[i] = rest as LogRecord
       }
       if (op.record.store) {
@@ -206,7 +219,7 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
   }
 
   function applyPending(data: Snapshot): Snapshot {
-    for (const q of outbox) applyOp(data, q, true, { queuedAt: q.queuedAt })
+    for (const q of outbox) applyOp(data, q, true, { queuedAt: q.queuedAt, sawNet: q.sawNet })
     for (const f of failed) {
       if (f.op.action === 'softDelete' || f.op.action === 'restore') continue
       if (f.op.action === 'upsertStore') continue
@@ -242,17 +255,22 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
       for (;;) {
         if (!outbox.length) { clearRetries(); break }
         const cur = outbox[0]
-        const { qid, queuedAt, groupId, label: _label, ...rest } = cur
+        const { qid, queuedAt, groupId, label: _label, sawNet: _sawNet, ...rest } = cur
         const op = stripForSend(rest as WriteOp)
         let res: Response
         try {
           res = await adapter.call(op as WriteOp)
           online = true
         } catch (err) {
-          if (err instanceof NetworkError) { online = false; armRetries(); break }
+          if (err instanceof NetworkError) {
+            outbox[0].sawNet = true
+            await persistQueue()
+            scheduleRetry(true)
+            break
+          }
           throw err
         }
-        if (isFail(res) && !PERMANENT_ERRORS.has(res.error)) { armRetries(); break }
+        if (isFail(res) && !PERMANENT_ERRORS.has(res.error)) { scheduleRetry(false); break }
         if (isFail(res)) {
           const group = groupId
           const moving = group ? outbox.filter((x) => x.groupId === group) : [cur]
@@ -264,6 +282,7 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
           await persistQueue()
           continue
         }
+        clearRetries()
         outbox = outbox.filter((x) => x.qid !== qid)
         const ignored = (res as { ignored?: string }).ignored === 'deleted'
         if (!ignored) {
@@ -367,7 +386,10 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
         await saveCache(kv, cacheMeta)
         await persistQueue()
       } catch (err) {
-        if (err instanceof NetworkError) online = false
+        if (err instanceof NetworkError) {
+          const isTimeout = err.kind === 'timeout'
+          if (!cacheMeta && !isTimeout) online = false
+        }
         emit()
         throw err
       } finally {

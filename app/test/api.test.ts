@@ -1,10 +1,16 @@
-import { test } from 'vitest'
+import { afterEach, test, vi } from 'vitest'
 import assert from 'node:assert/strict'
 import { createApi } from '@/api'
 import { createMockAdapter } from '@/api/mock'
 import { createGasAdapter } from '@/api/gas'
+import { NetworkError } from '@/api/errors'
+import type { Op } from '@/api/types'
 import { memoryStorage } from './helpers'
 import { taipeiDay, taipeiIso } from '@/lib/day'
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 const NOW = Date.parse('2026-10-10T18:00:00+08:00')
 const day = taipeiDay(new Date(NOW))
@@ -34,6 +40,7 @@ test('離線寫入留在 outbox、順序送出、樂觀列有待上傳標記', a
   await api.appendLog({ id: 'l1', ...logFields })
   assert.equal(api.peek()!.logs.find((r) => r.id === 'l1')?.__pending, true)
   assert.equal(api.status().pending, 1)
+  assert.equal(api.status().online, true)
   mock.setOffline(false)
   assert.equal(await api.flush(), 1)
   assert.equal(api.status().pending, 0)
@@ -80,6 +87,129 @@ test('Apps Script 介面卡：text/plain、密鑰只在 body', async () => {
   assert.equal((seen!.init.headers as Record<string, string>)['Content-Type'], 'text/plain;charset=utf-8')
   assert.ok(!seen!.url.includes('s3cret'))
   assert.equal(JSON.parse(String(seen!.init.body)).secret, 's3cret-value-123456')
+})
+
+async function afterGap(ms: number) {
+  await vi.advanceTimersByTimeAsync(ms)
+  await new Promise<void>((r) => setImmediate(r))
+  await new Promise<void>((r) => setImmediate(r))
+}
+
+test('一次寫入失敗下次成功：第一次不出橫幅，2 秒後送出，後面間隔不再送', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const storage = memoryStorage()
+  const inner = createMockAdapter({ storage, now: () => NOW })
+  let writes = 0
+  const adapter = {
+    kind: 'test',
+    call: (op: Op) => {
+      if (op.action !== 'read') {
+        writes += 1
+        if (writes === 1) return Promise.reject(new NetworkError())
+      }
+      return inner.call(op)
+    },
+  }
+  const api = createApi({ adapter, storage, now: () => NOW })
+  await api.ready
+  await api.appendLog({ id: 'l-retry-ok', ...logFields })
+  assert.equal(api.status().online, true)
+  assert.equal(api.status().pending, 1)
+  const row = api.peek()!.logs.find((r) => r.id === 'l-retry-ok')
+  assert.equal(row?.__pending, true)
+  assert.notEqual(row?.__write, 'failed')
+  assert.equal(row?.__syncing, true)
+  await afterGap(2000)
+  assert.equal(api.status().pending, 0)
+  assert.equal(api.status().online, true)
+  assert.ok(!api.peek()!.logs.find((r) => r.id === 'l-retry-ok')?.__pending)
+  const sent = writes
+  await afterGap(20000)
+  assert.equal(api.status().pending, 0)
+  assert.equal(writes, sent)
+})
+
+test('三次排程都 NetworkError 才 online = false，record.id 四次相同', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const storage = memoryStorage()
+  const inner = createMockAdapter({ storage, now: () => NOW })
+  const ids: string[] = []
+  const adapter = {
+    kind: 'test',
+    call: (op: Op) => {
+      if (op.action === 'read') return inner.call(op)
+      if (op.action === 'append') ids.push(op.record.id)
+      return Promise.reject(new NetworkError())
+    },
+  }
+  const api = createApi({ adapter, storage, now: () => NOW })
+  await api.ready
+  await api.appendLog({ id: 'l-net', ...logFields })
+  assert.equal(api.status().online, true)
+  await afterGap(2000)
+  assert.equal(api.status().online, true)
+  assert.equal(api.status().pending, 1)
+  await afterGap(5000)
+  assert.equal(api.status().online, true)
+  await afterGap(15000)
+  assert.equal(api.status().online, false)
+  assert.equal(api.status().pending, 1)
+  assert.deepEqual(ids, ['l-net', 'l-net', 'l-net', 'l-net'])
+})
+
+test('逾時第一次不判斷線，三次重試都逾時才 online = false，id 不變', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const storage = memoryStorage()
+  const inner = createMockAdapter({ storage, now: () => NOW })
+  const ids: string[] = []
+  const adapter = {
+    kind: 'test',
+    call: (op: Op) => {
+      if (op.action === 'read') return inner.call(op)
+      if (op.action === 'append') ids.push(op.record.id)
+      return Promise.reject(new NetworkError(undefined, 'timeout'))
+    },
+  }
+  const api = createApi({ adapter, storage, now: () => NOW })
+  await api.ready
+  await api.appendLog({ id: 'l-to', ...logFields })
+  assert.equal(api.status().online, true)
+  await afterGap(2000)
+  assert.equal(api.status().online, true)
+  await afterGap(5000)
+  assert.equal(api.status().online, true)
+  await afterGap(15000)
+  assert.equal(api.status().online, false)
+  assert.deepEqual(ids, ['l-to', 'l-to', 'l-to', 'l-to'])
+})
+
+test('有快取的讀取失敗不把 online 設成 false', async () => {
+  const { api, mock } = await setup()
+  await api.load()
+  mock.setOffline(true)
+  await assert.rejects(() => api.load())
+  assert.equal(api.status().online, true)
+})
+
+test('busy 三次用盡後 online 仍為 true、列仍在 pending', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const storage = memoryStorage()
+  const inner = createMockAdapter({ storage, now: () => NOW })
+  const adapter = {
+    kind: 'test',
+    call: (op: Op) => (op.action === 'read' ? inner.call(op) : Promise.resolve({ ok: false as const, error: 'busy' })),
+  }
+  const api = createApi({ adapter, storage, now: () => NOW })
+  await api.ready
+  await api.appendLog({ id: 'l-busy', ...logFields })
+  assert.equal(api.status().online, true)
+  assert.equal(api.status().pending, 1)
+  await afterGap(2000)
+  await afterGap(5000)
+  await afterGap(15000)
+  assert.equal(api.status().online, true)
+  assert.equal(api.status().pending, 1)
+  assert.equal(api.peek()!.logs.find((r) => r.id === 'l-busy')?.__write, 'pending')
 })
 
 test('P1：不能補記未來的體重日期（台北時間），今天可以', async () => {

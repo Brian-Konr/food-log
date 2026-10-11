@@ -112,3 +112,59 @@ test('fresh 看得到伺服器數字', () => {
   expect(container.textContent).toContain('1,700')
   expect(container.textContent).toContain('雞胸')
 })
+
+test('熱量超過、蛋白質沒超過：還剩 47.8 g 蛋白質', () => {
+  const { container } = renderToday('fresh', {
+    remain: { kcal: -120, protein: 47.8, fat: 0, carb: 0 },
+    eaten: { kcal: 1920, protein: 102.2, fat: 60, carb: 200 },
+  })
+  const card = container.querySelector('[data-remain-card]')
+  const text = card?.textContent || ''
+  expect(text).toContain('今天超過')
+  expect(text).toContain('還剩')
+  expect(text).toContain('47.8')
+  expect(text).toContain('g 蛋白質')
+  expect(text).not.toContain('蛋白質超過')
+  expect(card?.getAttribute('aria-label')).toContain('還剩 47.8 公克蛋白質')
+  const num = card?.querySelector('.text-2xl')
+  expect(num?.className).toContain('text-[var(--macro-protein)]')
+})
+
+test('蛋白質超過：整句蛋白質超過 5.0 g，用 --over', () => {
+  const { container } = renderToday('fresh', {
+    remain: { kcal: -120, protein: -5, fat: 0, carb: 0 },
+    eaten: { kcal: 1920, protein: 155, fat: 60, carb: 200 },
+  })
+  const card = container.querySelector('[data-remain-card]')
+  const text = card?.textContent || ''
+  expect(text).toContain('蛋白質超過 5.0 g')
+  expect(text).not.toContain('g 蛋白質')
+  const num = card?.querySelector('.text-2xl')
+  expect(num?.className).toContain('text-[var(--over)]')
+  const aria = card?.getAttribute('aria-label') || ''
+  expect(aria).toContain('蛋白質超過 5.0 公克')
+  expect(aria).not.toContain('-')
+})
+
+test('只有蛋白質超過時標題仍是今天還剩', () => {
+  const { container } = renderToday('fresh', {
+    remain: { kcal: 100, protein: -5, fat: 0, carb: 0 },
+    eaten: { kcal: 1700, protein: 155, fat: 60, carb: 200 },
+  })
+  const card = container.querySelector('[data-remain-card]')
+  expect(card?.textContent).toContain('今天還剩')
+  expect(card?.textContent).toContain('蛋白質超過 5.0 g')
+})
+
+test('兩者都沒超過：蛋白質行沒有還剩前綴', () => {
+  const { container } = renderToday('fresh', {
+    remain: { kcal: 100, protein: 47.8, fat: 0, carb: 0 },
+    eaten: { kcal: 1700, protein: 102.2, fat: 60, carb: 200 },
+  })
+  const card = container.querySelector('[data-remain-card]')
+  const text = card?.textContent || ''
+  expect(text).toContain('今天還剩')
+  expect(text).not.toContain('還剩 47.8')
+  expect(text).toContain('47.8')
+  expect(text).toContain('g 蛋白質')
+})

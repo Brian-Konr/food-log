@@ -39,7 +39,7 @@ css=f'''/* food-log design tokens v0.3（Winter，2026-10-10）
   --font-family-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang TC", "Noto Sans TC", system-ui, sans-serif;
   --font-family-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang TC", "Noto Sans TC", system-ui, sans-serif;
   --ease-spring: cubic-bezier(.2,.9,.3,1.1); --ease-out: cubic-bezier(.2,.8,.2,1);
-  --dur-fast: 150ms; --dur-base: 250ms; --dur-bar: 400ms; --dur-sheet: 350ms; --toast-ms: 5000;
+  --dur-fast: 150ms; --dur-base: 250ms; --dur-bar: 400ms; --dur-sheet: 350ms; --toast-ms: 3000;
 }}
 .light {{
   color-scheme: light;

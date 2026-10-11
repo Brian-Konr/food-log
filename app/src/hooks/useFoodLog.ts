@@ -164,7 +164,7 @@ export function useFoodLog(opts: {
     items,
     stores: data?.stores ?? [],
     snapshotItems,
-    network: networkState({ browserOnline, backendOk: queuedOnline, pending, failStreak }),
+    network: networkState({ browserOnline, backendOk: queuedOnline, pending, failStreak, hasCache: cache != null }),
     queuedCount: pending,
     failedCount: status?.failed.length ?? 0,
     failed: status?.failed ?? [],

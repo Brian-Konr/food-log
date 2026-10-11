@@ -277,12 +277,12 @@ export default function App(props: AppProps = {}) {
         if (storeUi?.page === 'store' && storeUi.id === sid) setStoreUi(null)
         if (storeUi?.page === 'rename' && storeUi.id === sid) setStoreUi(null)
         if (storeUi?.page === 'item' && storeUi.storeId === sid) setStoreUi(null)
-        showToast(`${name}沒有存到・重試`, () => api.retryFailed(f.qid), { durationMs: 6000, actionLabel: '重試' })
+        showToast(`${name}沒有存到・重試`, () => api.retryFailed(f.qid), { actionLabel: '重試' })
       } else if (op.action === 'softDelete' && op.table === 'Logs') {
         const name = logs.find((l) => l.id === op.id)?.name || '紀錄'
-        showToast(`刪除失敗，已還原 ${name}・重試`, () => api.retryFailed(f.qid), { durationMs: 6000, actionLabel: '重試' })
+        showToast(`刪除失敗，已還原 ${name}・重試`, () => api.retryFailed(f.qid), { actionLabel: '重試' })
       } else if (f.label === 'fav' || (op.action === 'setConfig' && op.key === 'fav_ids') || (op.action === 'upsertItem' && f.label === 'fav')) {
-        showToast('收藏沒有存到・重試', () => api.retryFailed(f.qid), { durationMs: 6000, actionLabel: '重試' })
+        showToast('收藏沒有存到・重試', () => api.retryFailed(f.qid), { actionLabel: '重試' })
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -11,6 +11,8 @@ export function LogRow(props: {
   stores?: StoreRecord[]
   onOpen: (log: LogRecord) => void
   now?: number
+  /** 瀏覽器離線。這時列上仍是「待上傳」，不要改成「同步中」。 */
+  offline?: boolean
   onSwipeDelete?: (log: LogRecord) => void
 }) {
   const { log } = props
@@ -21,7 +23,14 @@ export function LogRow(props: {
   const pending = log.__write === 'pending' || !!log.__pending
   const failed = log.__write === 'failed'
   const queuedAt = log.__queuedAt ? Date.parse(log.__queuedAt) : 0
-  const showPending = pending && !failed && props.now != null && queuedAt > 0 && props.now - queuedAt > 3000
+  // 同步中只用於瀏覽器還連著、寫入正在重試。離線佇列維持 3 秒後「待上傳」，整列仍是 button。
+  const showSyncing = pending && !failed && !!log.__syncing && !props.offline
+  const showPending = pending && !failed && !showSyncing && props.now != null && queuedAt > 0 && props.now - queuedAt > 3000
+  const tail = showSyncing
+    ? <span className="text-muted-foreground"> · 同步中</span>
+    : showPending
+      ? <span className="text-muted-foreground"> · 待上傳</span>
+      : null
   let second: ReactNode
   if (failed) {
     second = (
@@ -31,11 +40,11 @@ export function LogRow(props: {
       </span>
     )
   } else if (quick) {
-    second = <>1 筆{showPending ? <span className="text-muted-foreground"> · 待上傳</span> : null}</>
+    second = <>1 筆{tail}</>
   } else if (storeName) {
-    second = <>{storeName} · {qty}{showPending ? <span className="text-muted-foreground"> · 待上傳</span> : null}</>
+    second = <>{storeName} · {qty}{tail}</>
   } else {
-    second = <>{log.src} · {qty}{showPending ? <span className="text-muted-foreground"> · 待上傳</span> : null}</>
+    second = <>{log.src} · {qty}{tail}</>
   }
   const fading = log.deleted
   return (

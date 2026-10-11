@@ -79,6 +79,50 @@ test('LogRow 寫蛋白 20.0 g', () => {
   expect(screen.getByRole('button').textContent).toContain('蛋白 20.0 g')
 })
 
+test('離線時已遇網路失敗的列仍是含待上傳的 button', () => {
+  const queuedAt = '2026-10-10T12:00:00.000Z'
+  render(
+    <LogRow
+      offline
+      now={Date.parse(queuedAt) + 4000}
+      onOpen={() => {}}
+      log={logFields({
+        id: 'l-off',
+        name: '快速記錄',
+        item_id: '',
+        source: 'quick',
+        __pending: true,
+        __write: 'pending',
+        __syncing: true,
+        __queuedAt: queuedAt,
+      })}
+    />,
+  )
+  const row = screen.getByRole('button', { name: /待上傳/ })
+  expect(row.tagName).toBe('BUTTON')
+  expect(row.textContent).toContain('待上傳')
+  expect(row.textContent).not.toContain('同步中')
+})
+
+test('連線重試中的列標同步中，不改成待上傳', () => {
+  const queuedAt = '2026-10-10T12:00:00.000Z'
+  render(
+    <LogRow
+      now={Date.parse(queuedAt) + 4000}
+      onOpen={() => {}}
+      log={logFields({
+        id: 'l-sync',
+        __pending: true,
+        __write: 'pending',
+        __syncing: true,
+        __queuedAt: queuedAt,
+      })}
+    />,
+  )
+  expect(screen.getByRole('button', { name: /同步中/ })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /待上傳/ })).toBeNull()
+})
+
 test('離線徽章圓點用 muted', () => {
   const { container } = render(
     <SyncBadge loadState="fresh" pending={2} online={false} onRetry={() => {}} />,

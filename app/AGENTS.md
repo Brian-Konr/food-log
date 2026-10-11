@@ -65,7 +65,7 @@
 3. **寫入必須冪等。** 每筆紀錄的 `id` 在前端產生，後端遇到重複 id 視為成功。逾時後重送不能變成兩筆。例外只有體重：同一天第二筆新 id 會覆寫公斤數，Sheet 仍只有一筆未刪除的列；重送舊 id 不改儲存格。
 4. **所有請求最長等 55 秒**（`GAS_TIMEOUT_MS`）。不要把逾時調短。
 5. **離線佇列不能默默丟資料。** 送不出去的紀錄留在手機 IndexedDB。暫時失敗後依序等 2 秒、5 秒、15 秒各自動 `flush` 一次；三次之後等回到前景或 `online` 再試。永久錯誤不進這個計時器。
-6. **連線橫幅規則**：背景讀取失敗一次不顯示，15 秒後重讀，連續失敗 2 次才顯示；有待送紀錄時失敗一次就顯示（`src/data/network.ts`）。不要改這套規則。
+6. **連線橫幅**：瀏覽器 `navigator.onLine === false` 立刻顯示「連不到 Google 試算表」。背景讀取失敗一次不顯示，15 秒後重讀；沒有快取且連續失敗 2 次才顯示。有快取的讀取失敗不顯示橫幅，用頂列 `SyncBadge`。寫入的 `NetworkError`（含 55 秒逾時）一次不把 `online` 設成 false、不顯示橫幅；同一筆留在佇列，依序再等 2 秒、5 秒、15 秒各試一次，三次都失敗才顯示橫幅。不要因為佇列裡有紀錄就把一次寫入失敗當成斷線。
 7. **後端寫入用 `LockService` 包住（等 10 秒）**。飲食紀錄只 append 和軟刪除（`deleted=TRUE`）。
 8. **`src/data/defaults.ts` 和 `gas/Schema.gs` 的預設值必須一致**，`test/defaults.test.ts` 會比對。`theme` 不進 Sheet。
 9. **`gas/FoodLog-AppsScript.gs` 是產生出來的**，改 `gas/*.gs` 後要跑 `npm run build:gas`，`test/gas-merged.test.ts` 會檢查。

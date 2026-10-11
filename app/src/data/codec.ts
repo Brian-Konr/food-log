@@ -37,6 +37,7 @@ export function decodeLog(r: Record<string, unknown>): LogRecord {
     __queuedAt: r.__queuedAt ? str(r.__queuedAt) : undefined,
     __failMessage: r.__failMessage ? str(r.__failMessage) : undefined,
     __groupId: r.__groupId ? str(r.__groupId) : undefined,
+    __syncing: r.__syncing ? true : undefined,
   }
 }
 

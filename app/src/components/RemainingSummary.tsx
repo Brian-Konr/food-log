@@ -33,11 +33,16 @@ export function RemainingSummary(props: {
   const overPro = props.remain.protein < 0
   const title = overKcal ? '今天超過' : '今天還剩'
   const kcalText = overKcal ? `超過 ${formatInt(Math.abs(props.remain.kcal))}` : formatInt(props.remain.kcal)
-  const proText = overPro ? `超過 ${formatMacro(Math.abs(props.remain.protein))} g` : formatMacro(props.remain.protein)
-  const ariaCore = overKcal
-    ? `今天超過 ${formatInt(Math.abs(props.remain.kcal))} 大卡，蛋白質 ${overPro ? '超過 ' + formatMacro(Math.abs(props.remain.protein)) : formatMacro(props.remain.protein)} 公克`
-    : `今天還剩 ${formatInt(props.remain.kcal)} 大卡，蛋白質 ${formatMacro(props.remain.protein)} 公克`
+  const kcalPart = overKcal
+    ? `今天超過 ${formatInt(Math.abs(props.remain.kcal))} 大卡`
+    : `今天還剩 ${formatInt(props.remain.kcal)} 大卡`
+  const ariaCore = overPro
+    ? `${kcalPart}，蛋白質超過 ${formatMacro(Math.abs(props.remain.protein))} 公克`
+    : overKcal
+      ? `${kcalPart}，還剩 ${formatMacro(props.remain.protein)} 公克蛋白質`
+      : `${kcalPart}，蛋白質 ${formatMacro(props.remain.protein)} 公克`
   const aria = props.cached ? `上次的資料，同步中，${ariaCore}` : ariaCore
+  const proNumClass = `text-2xl font-bold leading-9 tnum ${props.muted ? 'text-muted-foreground' : 'text-[var(--macro-protein)]'}`
   return (
     <section data-remain-card className="rounded-[var(--radius)] border border-border bg-card p-5" aria-label={aria}>
       <div className="font-semibold text-muted-foreground">{title}</div>
@@ -49,8 +54,17 @@ export function RemainingSummary(props: {
         <span className="text-muted-foreground">kcal</span>
       </div>
       <div className="mb-4 flex h-9 items-end gap-2">
-        <b className={`text-2xl font-bold leading-9 tnum ${overPro ? 'text-[var(--over)]' : props.muted ? 'text-muted-foreground' : 'text-[var(--macro-protein)]'}`}>{proText}</b>
-        {!overPro && <span className="text-muted-foreground">g 蛋白質</span>}
+        {overPro ? (
+          <b className="text-2xl font-bold leading-9 tnum text-[var(--over)]">
+            {`蛋白質超過 ${formatMacro(Math.abs(props.remain.protein))} g`}
+          </b>
+        ) : (
+          <>
+            {overKcal && <span className="text-muted-foreground">還剩 </span>}
+            <b className={proNumClass}>{formatMacro(props.remain.protein)}</b>
+            <span className="text-muted-foreground">{overKcal ? ' g 蛋白質' : 'g 蛋白質'}</span>
+          </>
+        )}
       </div>
       <MacroBar eaten={props.eaten} targets={props.targets} />
       {!!props.failedCount && <p className="mt-2 text-muted-foreground">有 {props.failedCount} 筆沒有存到</p>}

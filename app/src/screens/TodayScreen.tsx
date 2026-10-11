@@ -104,7 +104,7 @@ export function TodayScreen(props: {
             ) : emptyOk ? (
               <p className="px-4 py-6 text-muted-foreground">今天還沒有紀錄</p>
             ) : live.map((l) => (
-              <LogRow key={l.id} log={l} item={props.itemsById.get(l.item_id)} stores={props.stores} onOpen={props.onOpenLog} now={props.now} />
+              <LogRow key={l.id} log={l} item={props.itemsById.get(l.item_id)} stores={props.stores} onOpen={props.onOpenLog} now={props.now} offline={!props.online} />
             ))}
           </div>
         </>

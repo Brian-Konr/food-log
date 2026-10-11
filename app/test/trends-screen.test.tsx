@@ -106,6 +106,44 @@ test('窗口內正好 1 筆：沒有 path，有公斤文字', () => {
   expect(screen.getByText(formatKg(72.4))).toBeTruthy()
 })
 
+test('1 週只有 2 筆體重：大字是還不到 7 天', () => {
+  const weights = [W(TODAY, 72.4), W(addDays(TODAY, -1), 72.6)]
+  renderTrends({ weights, range: '1W', logs: [L(TODAY, 1800), L(addDays(TODAY, -1), 1800), L(addDays(TODAY, -2), 1800)] })
+  const msg = screen.getByText('還不到 7 天')
+  expect(msg.className).toMatch(/text-base/)
+  expect(msg.className).toMatch(/text-muted-foreground/)
+  expect(msg.className).not.toMatch(/font-bold/)
+  expect(msg.className).not.toMatch(/text-\[34px\]/)
+  const card = screen.getByRole('heading', { name: '體重（kg）' }).closest('section')
+  const slot = card?.querySelector('.min-h-\\[34px\\]')
+  expect(slot?.textContent).toBe('還不到 7 天')
+  expect(card?.textContent).toContain('7 日平均')
+  expect(screen.queryByText('這段期間沒有體重紀錄')).toBeNull()
+})
+
+test('1 個月兩筆體重仍是還不到 7 天', () => {
+  renderTrends({
+    weights: [W(TODAY, 72.4), W(addDays(TODAY, -1), 72.6)],
+    range: '1M',
+    logs: [L(TODAY, 1800), L(addDays(TODAY, -1), 1800), L(addDays(TODAY, -2), 1800)],
+  })
+  expect(screen.getByText('還不到 7 天')).toBeTruthy()
+})
+
+test('三筆體重有 7 日平均，大字是粗體公斤', () => {
+  renderTrends({
+    range: '1W',
+    weights: [W(TODAY, 72.0), W(addDays(TODAY, -1), 72.2), W(addDays(TODAY, -2), 72.4)],
+    logs: [L(TODAY, 1800), L(addDays(TODAY, -1), 1800), L(addDays(TODAY, -2), 1800)],
+  })
+  expect(screen.queryByText('還不到 7 天')).toBeNull()
+  const card = screen.getByRole('heading', { name: '體重（kg）' }).closest('section')
+  const big = card?.querySelector('.text-\\[34px\\]')
+  expect(big?.className).toMatch(/text-\[34px\]/)
+  expect(big?.className).toMatch(/font-bold/)
+  expect(big?.textContent).toMatch(/kg/)
+})
+
 test('3 個月 cached-syncing 且沒有 weightDays 時圖區是骨架', () => {
   const weights = [W(TODAY, 72.4)]
   const { rerender, onRange, container } = renderTrends({

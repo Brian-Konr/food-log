@@ -70,6 +70,7 @@ export type LogRecord = {
   __queuedAt?: string
   __failMessage?: string
   __groupId?: string
+  __syncing?: boolean
 }
 
 export type WeightRecord = {

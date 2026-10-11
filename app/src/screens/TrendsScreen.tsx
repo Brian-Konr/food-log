@@ -170,7 +170,13 @@ export function TrendsScreen(props: {
               </button>
             ))}
           </div>
-          <div className="text-[34px] font-bold tnum">{w.endAvg == null ? '—' : `${formatKg(w.endAvg)} kg`}</div>
+          <div className="flex min-h-[34px] items-center">
+            {w.endAvg == null ? (
+              <p className="text-base font-normal text-muted-foreground">還不到 7 天</p>
+            ) : (
+              <div className="text-[34px] font-bold tnum">{formatKg(w.endAvg)} kg</div>
+            )}
+          </div>
           <p className="text-muted-foreground">
             {w.deltaKg == null ? '7 日平均' : `7 日平均，${RANGE_THIS[props.range]}${deltaWord(w.deltaKg)}`}
           </p>
