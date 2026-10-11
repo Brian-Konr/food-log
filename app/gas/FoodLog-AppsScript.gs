@@ -818,25 +818,25 @@ function readConfig_() {
   return cfg;
 }
 
-function dayCutoff_(today) {
-  return addDays_(today, -34);
-}
+function logCutoff_(today) { return addDays_(today, -34); }
+function weightCutoff_(today) { return addDays_(today, -89); }
 
 function readAll_(since) {
   var today = taipeiToday_();
-  var cutoff = dayCutoff_(today);
+  var logCut = logCutoff_(today);
+  var weightCut = weightCutoff_(today);
   var sinceDay = since ? String(since) : '';
   var items = rows_('Items').map(strip_);
   var stores = rows_('Stores').map(strip_);
   var logs = rows_('Logs').filter(function (r) {
     var day = String(r.day || '').slice(0, 10);
-    if (day < cutoff) return false;
+    if (day < logCut) return false;
     if (sinceDay && String(r.updated_at || '') < sinceDay) return false;
     return true;
   }).map(strip_);
   var weights = rows_('Weights').filter(function (r) {
     var day = String(r.day || '').slice(0, 10);
-    if (day < cutoff) return false;
+    if (day < weightCut) return false;
     if (sinceDay && String(r.updated_at || '') < sinceDay) return false;
     return true;
   }).map(strip_);
@@ -848,7 +848,8 @@ function readAll_(since) {
     items: items,
     stores: stores,
     logs: logs,
-    weights: weights
+    weights: weights,
+    weightDays: 90
   };
 }
 
@@ -1036,7 +1037,7 @@ function avg7_(kgByDay, day) {
   return n >= 3 ? sum / n : null;
 }
 
-function weightSeries_(logs, weights, config, today) {
+function weightSeries_(logs, weights, config, today, spanDays) {
   var targetKcal = numCfg_(config, 'target_kcal', 0);
   var tdeeRaw = config && config.tdee != null ? String(config.tdee).trim() : '';
   var tdee = tdeeRaw === '' ? null : Number(tdeeRaw);
@@ -1044,7 +1045,8 @@ function weightSeries_(logs, weights, config, today) {
   var byDay = totalsByDay_(logs);
   var points = [];
   var avg7pts = [];
-  var windowStart = addDays_(today, -28);
+  var span = (spanDays == null || !isFinite(spanDays) || spanDays < 2) ? 29 : Math.floor(spanDays);
+  var windowStart = addDays_(today, -(span - 1));
   var d;
   for (d = windowStart; d <= today; d = addDays_(d, 1)) {
     if (kgByDay[d] != null) points.push({ day: d, kg: kgByDay[d] });

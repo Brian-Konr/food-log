@@ -49,3 +49,9 @@ body, #root {
   .fade-in, .row-in { animation: none; }
   .row-out { transition: none; }
 }
+
+@keyframes fl-fade { from { opacity: 0 } to { opacity: 1 } }
+.fl-fade { animation: fl-fade 150ms ease; }
+@media (prefers-reduced-motion: reduce) {
+  .fl-fade { animation: none; }
+}

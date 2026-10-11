@@ -17,7 +17,7 @@ if [ ! -f "$CLASP_DIR/.clasp.json" ]; then
   echo "[deploy:gas] 找不到 $CLASP_DIR/.clasp.json" >&2
   exit 1
 fi
-if [ ! -x "$CLASP_BIN" ] && ! command -v "$CLASP_BIN" >/dev/null 2>&1; then
+if [ ! -x "${CLASP_BIN}" ] && ! command -v "${CLASP_BIN}" >/dev/null 2>&1; then
   echo "[deploy:gas] 找不到 clasp：$CLASP_BIN" >&2
   exit 1
 fi
@@ -44,67 +44,17 @@ if [ ! -f "$SRC/appsscript.json" ]; then
   cp "$BAK/appsscript.json" "$SRC/appsscript.json"
 fi
 
+# 任何 clasp 指令都必須先 cd "$CLASP_DIR"。
 echo "[deploy:gas] clasp push"
 (
   cd "$CLASP_DIR"
   "$CLASP_BIN" push
 )
 
-echo "[deploy:gas] 找出非 @HEAD 的正式部署"
-DEPLOY_JSON="$("$CLASP_BIN" --json deployments 2>/dev/null || true)"
-DEPLOY_ID=""
-if [ -n "$DEPLOY_JSON" ]; then
-  DEPLOY_ID="$(DEPLOY_JSON="$DEPLOY_JSON" python3 - <<'PY'
-import json, os, re, sys
-raw = os.environ.get("DEPLOY_JSON", "").strip()
-if not raw:
-    sys.exit(0)
-try:
-    data = json.loads(raw)
-except json.JSONDecodeError:
-    sys.exit(0)
-rows = data if isinstance(data, list) else data.get("deployments") or data.get("items") or []
-pick = ""
-for d in rows:
-    if not isinstance(d, dict):
-        continue
-    did = d.get("deploymentId") or d.get("id") or ""
-    cfg = d.get("deploymentConfig") or d.get("config") or {}
-    ver = cfg.get("versionNumber") if isinstance(cfg, dict) else None
-    # @HEAD 沒有 versionNumber，或文字裡帶 HEAD
-    blob = json.dumps(d, ensure_ascii=False)
-    if ver in (None, "", 0) or re.search(r"@HEAD\b", blob):
-        continue
-    if did:
-        pick = did
-        break
-if pick:
-    print(pick)
-PY
-)"
-fi
-if [ -z "$DEPLOY_ID" ]; then
-  DEPLOY_ID="$(
-    cd "$CLASP_DIR"
-    "$CLASP_BIN" deployments | awk '
-      /@HEAD/ { next }
-      {
-        if (match($0, /[A-Za-z0-9_-]{20,}/)) {
-          print substr($0, RSTART, RLENGTH)
-          exit
-        }
-      }
-    '
-  )"
-fi
-if [ -z "$DEPLOY_ID" ]; then
-  echo "[deploy:gas] 找不到非 @HEAD 的部署" >&2
-  exit 1
-fi
-
-echo "[deploy:gas] update-deployment $DEPLOY_ID"
+echo "[deploy:gas] update-deployment"
 (
   cd "$CLASP_DIR"
+  DEPLOY_ID="${FOODLOG_DEPLOY_ID:-AKfycbzkkNiqeHeFF7i0qgC8V8vTApGuvLgCgobEsDI_63c1ZUpftEf2tqYCjO57L64nlqwffQ}"
   "$CLASP_BIN" update-deployment "$DEPLOY_ID"
 )
 echo "[deploy:gas] 已更新正式部署（網址不變）"

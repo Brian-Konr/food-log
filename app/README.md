@@ -99,6 +99,8 @@ Kyujin 提醒連結是 `https://brian-konr.github.io/food-log/#weight`。
 
 前端要容忍舊後端：`read` 沒有 `stores` 時當成 `[]`。`schema_outdated` 只會出現在自動 migrate 仍失敗時；畫面把錯誤代碼顯示出來。
 
+v1.1.1 沒有新欄位，不要為了它跑 migrate；要更新 Apps Script 只是因為 Weights 的讀取窗口變了。
+
 授權範圍維持 `spreadsheets.currentonly`。不要加 Drive。
 
 如果改用「新增部署作業」，會得到新的網址，要更新 `deploy/gas-url` 並重新部署前端。
@@ -188,7 +190,7 @@ Logs 的 append/update 以及 upsertItem：四項營養素都要是有限數字�
 
 | action | 參數 | 說明 |
 |---|---|---|
-| `read` | `since?` | `version: 1`。Config、Items、Stores 全回（含已刪除）。Logs、Weights：`day >= 今天減 34 天`（共 35 天），含已刪除。有 `since` 時 Logs／Weights 再濾 `updated_at >= since`。沒有 `stores` 時前端當 `[]` |
+| `read` | `since?` | `version: 1`。Config、Items、Stores 全回（含已刪除）。Logs：`day >= 今天減 34 天`（共 35 天），含已刪除。Weights：`day >= 今天減 89 天`（共 90 天），含已刪除。有 `since` 時 Logs／Weights 再濾 `updated_at >= since`。回應含 `weightDays: 90`；舊後端沒有這個欄位時前端不要當成失敗。沒有 `stores` 時前端當 `[]` |
 | `append` | `table:'Logs'`, `record` | 新增飲食紀錄。`id` 由前端產生，重複的 `id` 視為成功。Kyujin 必須 `source:'kyujin'` |
 | `update` | `table:'Logs'`, `id`, `patch` | 改份量、時間、營養素、品名。不能改 `id`、`source`、`store`、`item_id`。Kyujin 只能改 `source=kyujin` 的列 |
 | `softDelete` / `restore` | `table`, `id` | 軟刪除／復原。Weights 依列上的 `id`。Weights restore 時若該 `day` 已有未刪除列則 `bad_record`。`Stores` 會連帶品項。Kyujin 不能刪／復原店家；Logs 僅限 `source=kyujin` |

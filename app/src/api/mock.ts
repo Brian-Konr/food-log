@@ -84,14 +84,16 @@ export function createMockAdapter(opts: { storage?: Storage; key?: string; now?:
     const kyujin = op.client === 'kyujin'
     switch (op.action) {
       case 'read': {
-        const cutoff = addDays(today(), -34)
+        const logCutoff = addDays(today(), -34)
+        const weightCutoff = addDays(today(), -89)
         const since = op.since ?? ''
         return {
           ok: true, version: 1, serverTime: stamp(), config: { ...db.config },
           items: db.items.map((r) => ({ ...r })),
           stores: db.stores.map((r) => ({ ...r })),
-          logs: db.logs.filter((r) => r.day >= cutoff && (!since || r.updated_at >= since)).map((r) => ({ ...r })),
-          weights: db.weights.filter((r) => r.day >= cutoff && (!since || r.updated_at >= since)).map((r) => ({ ...r })),
+          logs: db.logs.filter((r) => r.day >= logCutoff && (!since || r.updated_at >= since)).map((r) => ({ ...r })),
+          weights: db.weights.filter((r) => r.day >= weightCutoff && (!since || r.updated_at >= since)).map((r) => ({ ...r })),
+          weightDays: 90,
         } satisfies Snapshot
       }
       case 'append': {

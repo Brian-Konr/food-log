@@ -124,7 +124,7 @@ function avg7_(kgByDay, day) {
   return n >= 3 ? sum / n : null;
 }
 
-function weightSeries_(logs, weights, config, today) {
+function weightSeries_(logs, weights, config, today, spanDays) {
   var targetKcal = numCfg_(config, 'target_kcal', 0);
   var tdeeRaw = config && config.tdee != null ? String(config.tdee).trim() : '';
   var tdee = tdeeRaw === '' ? null : Number(tdeeRaw);
@@ -132,7 +132,8 @@ function weightSeries_(logs, weights, config, today) {
   var byDay = totalsByDay_(logs);
   var points = [];
   var avg7pts = [];
-  var windowStart = addDays_(today, -28);
+  var span = (spanDays == null || !isFinite(spanDays) || spanDays < 2) ? 29 : Math.floor(spanDays);
+  var windowStart = addDays_(today, -(span - 1));
   var d;
   for (d = windowStart; d <= today; d = addDays_(d, 1)) {
     if (kgByDay[d] != null) points.push({ day: d, kg: kgByDay[d] });

@@ -117,6 +117,7 @@ export function weightSeries(
   weights: Iterable<Pick<WeightRecord, 'deleted' | 'day' | 'kg' | 'updated_at'>>,
   config: Record<string, string>,
   today: string,
+  spanDays?: number,
 ): WeightSeries {
   const targets = parseTargets(config)
   const tdeeRaw = (config.tdee ?? '').toString().trim()
@@ -125,7 +126,8 @@ export function weightSeries(
   const byDay = totalsByDay(logs)
   const points: { day: string; kg: number }[] = []
   const avg7pts: { day: string; kg: number }[] = []
-  const windowStart = addDays(today, -28)
+  const span = spanDays == null || !Number.isFinite(spanDays) || spanDays < 2 ? 29 : Math.floor(spanDays)
+  const windowStart = addDays(today, -(span - 1))
   for (let d = windowStart; d <= today; d = addDays(d, 1)) {
     const kg = kgByDay.get(d)
     if (kg != null) points.push({ day: d, kg })
@@ -202,9 +204,11 @@ export function trendsView(
   config: Record<string, string>,
   today: string,
   weekMonday: string,
+  weightSpanDays?: number,
 ): TrendsView {
   const slots = kcalBarSlots(logs, weights, config, today)
   const completeDays = slots.filter((s) => s.slot === 'complete').length
+  const loggedDays = slots.filter((s) => s.slot !== 'future' && s.count > 0).length
   const incomplete = slots.filter((s) => s.slot === 'incomplete')
   const overGoal = Number(config.target_kcal) || 0
   const scored = slots.filter((s) => s.slot !== 'future')
@@ -212,12 +216,43 @@ export function trendsView(
   return {
     summary: weekSummary(logs, config, today, weekMonday),
     slots,
-    weight: weightSeries(logs, weights, config, today),
+    weight: weightSeries(logs, weights, config, today, weightSpanDays),
     completeDays,
-    insufficient: completeDays < 3,
+    loggedDays,
+    insufficient: loggedDays < 3,
     chartIncompleteN: incomplete.length,
     chartIncompleteDays: incomplete.map((s) => s.day),
     overGoalDays: scored.filter((s) => s.kcal > overGoal).length,
     chartAvgKcal: completeKcal.length ? Math.round(completeKcal.reduce((a, b) => a + b, 0) / completeKcal.length) : null,
   }
+}
+
+export type WeightRange = '1W' | '1M' | '3M'
+export const WEIGHT_RANGE_DAYS: Record<WeightRange, number> = { '1W': 7, '1M': 30, '3M': 90 }
+
+export function parseWeightRange(raw: string | null | undefined): WeightRange {
+  return raw === '1W' || raw === '1M' || raw === '3M' ? raw : '1M'
+}
+
+/** 三條 y 刻度，全部是 0.5 kg 的倍數，包住資料且上下至少各 0.5 kg。 */
+export function weightYTicks(values: number[]): { min: number; max: number; ticks: [number, number, number] } {
+  const toU = (kg: number) => Math.round(kg * 100) // 0.01 kg
+  const dMin = Math.min(...values.map(toU))
+  const dMax = Math.max(...values.map(toU))
+  const lo = dMin - 50
+  const hi = dMax + 50
+  let step = 50 // 0.5 kg
+  while (step * 2 < hi - lo) step += 50
+  const mid0 = Math.round(((dMin + dMax) / 2) / 50) * 50
+  for (let guard = 0; guard < 12; guard++) {
+    const bottom = mid0 - step
+    const top = mid0 + step
+    if (bottom <= lo && top >= hi) {
+      const ticks = [bottom, mid0, top].map((u) => u / 100) as [number, number, number]
+      return { min: ticks[0], max: ticks[2], ticks }
+    }
+    step += 50
+  }
+  const ticks = [mid0 - step, mid0, mid0 + step].map((u) => u / 100) as [number, number, number]
+  return { min: ticks[0], max: ticks[2], ticks }
 }

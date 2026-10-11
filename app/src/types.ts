@@ -121,6 +121,7 @@ export type Snapshot = {
   stores: StoreRecord[]
   logs: LogRecord[]
   weights: WeightRecord[]
+  weightDays?: number
 }
 
 export type Macros = { kcal: number; protein: number; fat: number; carb: number }
@@ -164,6 +165,7 @@ export type TrendsView = {
   slots: DaySlot[]
   weight: WeightSeries
   completeDays: number
+  loggedDays: number
   insufficient: boolean
   chartIncompleteN: number
   chartIncompleteDays: string[]

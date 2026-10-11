@@ -30,6 +30,30 @@ const step = (s) => console.log('·', s)
 const wait = (pg, ms) => pg.waitForTimeout(ms)
 const fail = (m) => { throw new Error(m) }
 
+// 必須和 src/lib/day.ts 一致：Date + 8 小時再 toISOString slice；加天數用 UTC 日。
+const OFFSET = 8 * 3600 * 1000
+const DAY_MS = 86400000
+function taipeiToday(now = Date.now()) {
+  return new Date(now + OFFSET).toISOString().slice(0, 10)
+}
+function addDays(day, days) {
+  return new Date(Date.parse(day + 'T00:00:00Z') + days * DAY_MS).toISOString().slice(0, 10)
+}
+function weightRow(day, kg) {
+  const ts = `${day}T08:00:00+08:00`
+  return { id: `w-${day}`, day, ts, deleted: false, updated_at: ts, kg }
+}
+const TREND_CFG = {
+  target_kcal: '2000',
+  target_protein: '150',
+  target_fat: '60',
+  target_carb: '200',
+  tdee: '2650',
+  remind_meal_times: '',
+  remind_weight_time: '',
+  fav_ids: '',
+}
+
 async function serverUp(url) {
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(2000) })
@@ -393,6 +417,78 @@ try {
     window.dispatchEvent(new Event('online'))
   })
   await wait(pg, 2000)
+
+  const today = taipeiToday()
+  const labels = { '1W': '1 週', '1M': '1 個月', '3M': '3 個月' }
+  const phrases = { '1W': '這 1 週', '1M': '這 1 個月', '3M': '這 3 個月' }
+  async function shotWeight({ file, range, weights, extra }) {
+    const ctx = await b.newContext(IPHONE)
+    const page = await ctx.newPage()
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
+    page.on('pageerror', (e) => errors.push(String(e)))
+    await page.addInitScript(({ range, db }) => {
+      localStorage.setItem('foodlog.mock', '1')
+      localStorage.setItem('foodlog.weightRange', range)
+      localStorage.setItem('foodlog.mockdb', JSON.stringify(db))
+    }, { range, db: { config: TREND_CFG, items: [], stores: [], logs: [], weights } })
+    await page.goto(BASE); await wait(page, 1500)
+    await page.getByRole('navigation', { name: '分頁' }).getByText('趨勢', { exact: true }).click()
+    await wait(page, 800)
+    await page.getByText('體重（kg）').first().waitFor({ timeout: 5000 })
+    if ((await page.getByRole('radio', { name: labels[range] }).getAttribute('aria-checked')) !== 'true') {
+      fail(`${labels[range]} 沒有選中`)
+    }
+    if (await page.getByText('這段期間沒有體重紀錄').count()) fail('不該出現沒有體重紀錄')
+    const body = await page.locator('body').innerText()
+    if (!body.includes(phrases[range])) fail(`沒有「${phrases[range]}」`)
+    if (range === '1M' || range === '3M') {
+      if (!(await page.getByText('依赤字預期').count())) fail('沒有依赤字預期')
+    }
+    if (extra) await extra(page)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await wait(page, 300)
+    await page.screenshot({ path: `${SHOTS}/${file}` })
+    await ctx.close()
+  }
+
+  step('體重區間 1W 2 筆')
+  await shotWeight({
+    file: '體重-1W-2筆-390x844.png',
+    range: '1W',
+    weights: [weightRow(today, 72.4), weightRow(addDays(today, -1), 72.0)],
+  })
+
+  step('體重區間 1M 10 筆')
+  const w10 = []
+  for (let i = 0; i < 10; i++) {
+    const day = addDays(today, -(9 - i))
+    w10.push(weightRow(day, Math.round((73.0 - 0.1 * i) * 10) / 10))
+  }
+  await shotWeight({
+    file: '體重-1M-10筆-390x844.png',
+    range: '1M',
+    weights: w10,
+    extra: async (page) => {
+      await page.getByRole('radio', { name: '1 週' }).click(); await wait(page, 300)
+      if ((await page.getByRole('radio', { name: '1 週' }).getAttribute('aria-checked')) !== 'true') fail('點 1 週後沒有選中')
+      await page.getByRole('radio', { name: '3 個月' }).click(); await wait(page, 300)
+      if ((await page.getByRole('radio', { name: '3 個月' }).getAttribute('aria-checked')) !== 'true') fail('點 3 個月後沒有選中')
+      await page.getByRole('radio', { name: '1 個月' }).click(); await wait(page, 300)
+      if ((await page.getByRole('radio', { name: '1 個月' }).getAttribute('aria-checked')) !== 'true') fail('點回 1 個月後沒有選中')
+    },
+  })
+
+  step('體重區間 3M 60 筆')
+  const w60 = []
+  for (let i = 0; i < 60; i++) {
+    const day = addDays(today, -(59 - i))
+    w60.push(weightRow(day, Math.round((78.0 - 0.1 * i) * 10) / 10))
+  }
+  await shotWeight({
+    file: '體重-3M-60筆-390x844.png',
+    range: '3M',
+    weights: w60,
+  })
 } finally {
   await b.close()
   stopServer()

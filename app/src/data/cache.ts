@@ -13,6 +13,7 @@ export type CachedSnapshot = {
   stores: StoreRecord[]
   logs: LogRecord[]
   weights: WeightRecord[]
+  weightDays?: number
 }
 
 function stripRow<T extends object>(r: T): T {
@@ -31,6 +32,7 @@ export function toCached(snap: Snapshot, now: number): CachedSnapshot {
     stores: (snap.stores ?? []).map(stripRow),
     logs: snap.logs.map(stripRow),
     weights: snap.weights.map(stripRow),
+    ...(snap.weightDays === 90 ? { weightDays: 90 } : {}),
   }
 }
 
@@ -44,6 +46,7 @@ export function snapshotFromCache(c: CachedSnapshot): Snapshot {
     stores: c.stores ?? [],
     logs: c.logs ?? [],
     weights: c.weights ?? [],
+    weightDays: c.weightDays,
   }
 }
 

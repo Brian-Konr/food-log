@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { addDays, weekStart } from '@/lib/day'
-import { isIncomplete, kcalBarSlots, latestKgByDay, avg7, weekSummary, weightSeries } from '@/lib/trends'
+import { isIncomplete, kcalBarSlots, latestKgByDay, avg7, weekSummary, weightSeries, trendsView, weightYTicks, parseWeightRange } from '@/lib/trends'
 import type { LogRecord, WeightRecord } from '@/types'
 
 const TODAY = '2026-10-10'
@@ -129,4 +129,88 @@ test('14. 完整日少於 3 的旗標為真', () => {
   const slots = kcalBarSlots([L(TODAY, 100)], [], CFG, TODAY)
   const complete = slots.filter((s) => s.slot === 'complete').length
   expect(complete).toBeLessThan(3)
+})
+
+test('15. 五天各 1 筆 Kyujin：loggedDays 5、不足為假、五格 incomplete', () => {
+  const start = addDays(weekStart(TODAY), -21)
+  const logs = Array.from({ length: 5 }, (_, i) => L(addDays(start, i), 3000, 0, { source: 'kyujin' }))
+  const v = trendsView(logs, [], CFG, TODAY, weekStart(TODAY))
+  expect(v.insufficient).toBe(false)
+  expect(v.loggedDays).toBe(5)
+  for (let i = 0; i < 5; i++) {
+    expect(v.slots.find((s) => s.day === addDays(start, i))?.slot).toBe('incomplete')
+  }
+})
+
+test('16. 只有今天和昨天各 1 筆（昨天 quick）：loggedDays 2、不足為真', () => {
+  const logs = [L(TODAY, 100), L(addDays(TODAY, -1), 100, 0, { source: 'quick' })]
+  const v = trendsView(logs, [], CFG, TODAY, weekStart(TODAY))
+  expect(v.loggedDays).toBe(2)
+  expect(v.insufficient).toBe(true)
+})
+
+test('17. 同一天只有軟刪除紀錄不計入 loggedDays', () => {
+  const logs = [
+    L(TODAY, 100),
+    L(addDays(TODAY, -1), 500, 0, { deleted: true }),
+  ]
+  expect(trendsView(logs, [], CFG, TODAY, weekStart(TODAY)).loggedDays).toBe(1)
+})
+
+test('18. 窗口起點再往前 1 天的紀錄不計入', () => {
+  const before = addDays(addDays(weekStart(TODAY), -21), -1)
+  const logs = [L(before, 2000)]
+  expect(trendsView(logs, [], CFG, TODAY, weekStart(TODAY)).loggedDays).toBe(0)
+})
+
+test('19. 三個有紀錄的日子（可不完整）不足為假', () => {
+  const logs = [L(TODAY, 100), L(addDays(TODAY, -1), 100), L(addDays(TODAY, -2), 100)]
+  expect(trendsView(logs, [], CFG, TODAY, weekStart(TODAY)).insufficient).toBe(false)
+})
+
+test('20. weightSeries(..., 7) 的點只落在窗口，更早的體重仍可暖身 avg7', () => {
+  const start = addDays(TODAY, -6)
+  const w = weightSeries([], [
+    W(addDays(start, -2), 70),
+    W(addDays(start, -1), 71),
+    W(start, 72),
+  ], CFG, TODAY, 7)
+  expect(w.points.every((p) => p.day >= start && p.day <= TODAY)).toBe(true)
+  expect(w.points.map((p) => p.day)).toEqual([start])
+  expect(w.avg7.some((p) => p.day === start)).toBe(true)
+})
+
+test('21. weightSeries 30／90／預設窗口起點', () => {
+  const s30 = addDays(TODAY, -29)
+  const w30 = weightSeries([], [W(s30, 70), W(addDays(s30, -1), 71)], CFG, TODAY, 30)
+  expect(w30.points.map((p) => p.day)).toEqual([s30])
+  const s90 = addDays(TODAY, -89)
+  const w90 = weightSeries([], [W(s90, 70), W(addDays(s90, -1), 71)], CFG, TODAY, 90)
+  expect(w90.points.map((p) => p.day)).toEqual([s90])
+  const s29 = addDays(TODAY, -28)
+  const wDef = weightSeries([], [W(s29, 70), W(addDays(s29, -1), 71)], CFG, TODAY)
+  expect(wDef.points.map((p) => p.day)).toEqual([s29])
+})
+
+test('22. weightYTicks 四例且皆為 0.5 的倍數', () => {
+  const cases: [number[], [number, number, number]][] = [
+    [[72.4], [71.5, 72.5, 73.5]],
+    [[72, 73], [71.5, 72.5, 73.5]],
+    [[72.4, 72.9], [71.5, 72.5, 73.5]],
+    [[70, 80], [69.5, 75, 80.5]],
+  ]
+  for (const [input, want] of cases) {
+    const { ticks } = weightYTicks(input)
+    expect(ticks).toEqual(want)
+    for (const t of ticks) expect(Math.abs(t * 2 - Math.round(t * 2)) < 1e-9).toBe(true)
+  }
+})
+
+test('23. parseWeightRange', () => {
+  expect(parseWeightRange('1W')).toBe('1W')
+  expect(parseWeightRange('1M')).toBe('1M')
+  expect(parseWeightRange('3M')).toBe('3M')
+  expect(parseWeightRange(null)).toBe('1M')
+  expect(parseWeightRange('')).toBe('1M')
+  expect(parseWeightRange('1Y')).toBe('1M')
 })

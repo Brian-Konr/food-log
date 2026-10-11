@@ -20,7 +20,7 @@ curl -sS -X POST '<GAS_EXEC_URL>' \
   --data '{"secret":"<SECRET>","client":"kyujin","action":"read"}'
 ```
 
-成功時 `ok` 為 true，`version` 為 1，並帶回 `serverTime`、`config`、`items`、`stores`、`logs`、`weights`。Items、Stores 與 Config 全給（含已刪除）。Logs 與 Weights 是台北今天起算往回 35 天。
+成功時 `ok` 為 true，`version` 為 1，並帶回 `serverTime`、`config`、`items`、`stores`、`logs`、`weights`。Items、Stores 與 Config 全給（含已刪除）。Logs 往回 35 天，Weights 往回 90 天，回應 `weightDays` 為 90。
 
 ## summary
 

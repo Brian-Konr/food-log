@@ -1,15 +1,31 @@
 import { useMemo, useState } from 'react'
-import type { LogRecord, WeightRecord } from '@/types'
+import type { LogRecord, WeightRecord, WeightSeries } from '@/types'
 import type { LoadState } from '@/data/loadstate'
 import { addDays, weekStart } from '@/lib/day'
 import { formatInt, formatKg, formatShortDate } from '@/lib/format'
 import { parseTargets } from '@/lib/nutrition'
-import { trendsView } from '@/lib/trends'
+import { trendsView, WEIGHT_RANGE_DAYS, type WeightRange } from '@/lib/trends'
 import { TrendKpi } from '@/components/TrendKpi'
 import { KcalBarChart } from '@/components/KcalBarChart'
 import { WeightChart } from '@/components/WeightChart'
 import { SyncBadge } from '@/components/SyncBadge'
 import { SkeletonBlock } from '@/components/SkeletonBlock'
+import { cn } from '@/lib/utils'
+
+const RANGE_UI: Record<WeightRange, string> = { '1W': '1 週', '1M': '1 個月', '3M': '3 個月' }
+const RANGE_THIS: Record<WeightRange, string> = { '1W': '這 1 週', '1M': '這 1 個月', '3M': '這 3 個月' }
+
+function weightChartSummary(w: WeightSeries, range: WeightRange): string {
+  const span = RANGE_UI[range]
+  if (w.startAvg != null && w.endAvg != null) {
+    const a = Math.round(w.startAvg * 10) / 10
+    const b = Math.round(w.endAvg * 10) / 10
+    if (b < a) return `過去 ${span}體重從 ${formatKg(a)} 降到 ${formatKg(b)} kg`
+    if (b > a) return `過去 ${span}體重從 ${formatKg(a)} 升到 ${formatKg(b)} kg`
+    return `過去 ${span}體重 ${formatKg(b)} kg，沒有變化`
+  }
+  return `過去 ${span}還沒有 7 日平均`
+}
 
 export function TrendsScreen(props: {
   today: string
@@ -24,11 +40,17 @@ export function TrendsScreen(props: {
   retrying?: boolean
   staleToday?: boolean
   weightFail?: { kg: number; onRetry: () => void } | null
+  range: WeightRange
+  onRange: (r: WeightRange) => void
+  weightDays?: number
 }) {
   const thisMon = weekStart(props.today)
   const oldest = addDays(thisMon, -21)
   const [mon, setMon] = useState(thisMon)
-  const view = useMemo(() => trendsView(props.logs, props.weights, props.config, props.today, mon), [props.logs, props.weights, props.config, props.today, mon])
+  const view = useMemo(
+    () => trendsView(props.logs, props.weights, props.config, props.today, mon, WEIGHT_RANGE_DAYS[props.range]),
+    [props.logs, props.weights, props.config, props.today, mon, props.range],
+  )
   const targets = parseTargets(props.config)
   const isThis = mon === thisMon
   const canPrev = addDays(mon, -7) >= oldest
@@ -51,6 +73,11 @@ export function TrendsScreen(props: {
   }
   const hasWeight = props.weights.some((x) => !x.deleted)
   const [table, setTable] = useState(false)
+  const chartSummary = weightChartSummary(w, props.range)
+  const showExpected = w.points.length >= 2 && w.expected.length >= 2
+  const showWeightSkeleton = props.range === '3M'
+    && (props.loadState === 'cached-syncing' || props.loadState === 'skeleton')
+    && (props.weightDays ?? 0) < 90
 
   return (
     <div className="mx-auto w-full max-w-xl px-4 pb-[calc(var(--tabbar-h)+var(--safe-bottom)+16px)] pt-2">
@@ -76,7 +103,7 @@ export function TrendsScreen(props: {
           <div className="mt-6 h-40 rounded-[var(--radius)] bg-muted" />
         </div>
       ) : view.insufficient ? (
-        <p className="mt-6 text-muted-foreground">還沒有足夠的紀錄，記滿 3 天就會出現趨勢。</p>
+        <p className="mt-6 text-muted-foreground">飲食記錄滿 3 天就會出現熱量趨勢（目前 {view.loggedDays} 天）</p>
       ) : (
         <>
           <div className="mt-4 grid grid-cols-3 gap-2">
@@ -86,6 +113,7 @@ export function TrendsScreen(props: {
           </div>
           {s.avgDeficit != null && s.avgDeficit < 0 && <p className="mt-1 text-[var(--over)]">{deficitLabel}</p>}
           {s.incompleteDays > 0 && <p className="mt-1 text-muted-foreground">不含記錄不完整的 {s.incompleteDays} 天</p>}
+          {s.avgKcal == null && <p className="mt-1 text-muted-foreground">本週還沒有完整記錄的日子</p>}
           {(props.config.tdee ?? '') === '' && <p className="mt-1 text-muted-foreground">先到設定填每日消耗，就能看到赤字</p>}
           <section className="mt-6 rounded-[var(--radius)] border border-border bg-card p-4">
           <h2 className="font-bold">每日熱量・近 4 週</h2>
@@ -117,7 +145,7 @@ export function TrendsScreen(props: {
       {hasWeight && (
         <section className="mt-8 rounded-[var(--radius)] border border-border bg-card p-4">
           <div className="flex items-center justify-between">
-            <h2 className="font-bold">體重</h2>
+            <h2 className="font-bold">體重（kg）</h2>
             <div className="flex items-center gap-2">
               {props.weightFail && (
                 <button type="button" className="text-destructive" onClick={props.weightFail.onRetry}>{formatKg(props.weightFail.kg)} kg 沒有存到 · 重試</button>
@@ -125,20 +153,53 @@ export function TrendsScreen(props: {
               <button type="button" className="h-11 px-2" onClick={props.onWeight}>＋ 記體重</button>
             </div>
           </div>
-          <div className="text-[34px] font-bold tnum">{w.endAvg == null ? '—' : formatKg(w.endAvg)} kg</div>
-          <p className="text-muted-foreground">7 日平均，4 週{deltaWord(w.deltaKg)}</p>
-          <WeightChart series={w} today={props.today} summary={`7 日平均 ${w.endAvg == null ? '—' : formatKg(w.endAvg)} kg，4 週${deltaWord(w.deltaKg)}`} />
-          <p className="mt-1 flex flex-wrap gap-x-3 text-muted-foreground" aria-hidden="true">
-            <span><span className="mr-1 inline-block size-2 rounded-full bg-[var(--chart-weight)]" />每日</span>
-            <span><span className="mr-1 inline-block w-4 border-t-[3px] border-[var(--chart-weight-avg)] align-middle" />7 日平均</span>
-            {w.expectedDeltaKg != null && <span><span className="mr-1 inline-block w-4 border-t-2 border-dashed border-[var(--chart-expected)] align-middle" />預期</span>}
+          <div role="radiogroup" aria-label="體重區間" className="mt-3 grid grid-cols-3 gap-2">
+            {(['1W', '1M', '3M'] as const).map((r) => (
+              <button
+                key={r}
+                type="button"
+                role="radio"
+                aria-checked={props.range === r}
+                className={cn(
+                  'h-11 rounded-full text-base',
+                  props.range === r ? 'bg-secondary font-semibold text-foreground' : 'text-muted-foreground',
+                )}
+                onClick={() => props.onRange(r)}
+              >
+                {RANGE_UI[r]}
+              </button>
+            ))}
+          </div>
+          <div className="text-[34px] font-bold tnum">{w.endAvg == null ? '—' : `${formatKg(w.endAvg)} kg`}</div>
+          <p className="text-muted-foreground">
+            {w.deltaKg == null ? '7 日平均' : `7 日平均，${RANGE_THIS[props.range]}${deltaWord(w.deltaKg)}`}
           </p>
-          {w.expectedDeltaKg != null && w.deltaKg != null && (
+          <div key={props.range} className="fl-fade mt-4">
+            {showWeightSkeleton ? (
+              <>
+                <div className="h-40" aria-busy="true">
+                  <SkeletonBlock className="h-40 w-full" announce />
+                </div>
+                <div className="mt-1 h-6" />
+              </>
+            ) : (
+              <WeightChart series={w} today={props.today} spanDays={WEIGHT_RANGE_DAYS[props.range]} summary={chartSummary} />
+            )}
+          </div>
+          {!showWeightSkeleton && (
+            <p className="mt-1 flex flex-wrap gap-x-3 text-muted-foreground" aria-hidden="true">
+              <span><span className="mr-1 inline-block size-2 rounded-full bg-[var(--chart-weight)]" />每日</span>
+              <span><span className="mr-1 inline-block w-4 border-t-[3px] border-[var(--chart-weight-avg)] align-middle" />7 日平均</span>
+              {showExpected && <span><span className="mr-1 inline-block w-4 border-t-2 border-dashed border-[var(--chart-expected)] align-middle" />預期</span>}
+            </p>
+          )}
+          {!showWeightSkeleton && showExpected && w.expectedDeltaKg != null && w.deltaKg != null && (
             <p className="text-muted-foreground">依赤字預期{deltaWord(w.expectedDeltaKg)}，實際{deltaWord(w.deltaKg)}</p>
           )}
           <span className="sr-only">
-            體重 7 日平均 {w.endAvg == null ? '—' : formatKg(w.endAvg)} kg，4 週{deltaWord(w.deltaKg)}
-            {w.expectedDeltaKg != null ? `；依赤字預期${deltaWord(w.expectedDeltaKg)}` : ''}。
+            {chartSummary}
+            {` ${RANGE_THIS[props.range]}`}
+            {showExpected && w.expectedDeltaKg != null ? `；依赤字預期${deltaWord(w.expectedDeltaKg)}` : ''}。
           </span>
         </section>
       )}

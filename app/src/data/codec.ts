@@ -116,6 +116,7 @@ export function decodeSnapshot(raw: {
   stores?: Record<string, unknown>[]
   logs?: Record<string, unknown>[]
   weights?: Record<string, unknown>[]
+  weightDays?: unknown
 }): Snapshot {
   return {
     ok: true,
@@ -126,6 +127,7 @@ export function decodeSnapshot(raw: {
     stores: (raw.stores ?? []).map(decodeStore),
     logs: (raw.logs ?? []).map(decodeLog),
     weights: (raw.weights ?? []).map(decodeWeight),
+    weightDays: raw.weightDays === 90 ? 90 : undefined,
   }
 }
 

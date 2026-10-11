@@ -7,6 +7,7 @@ import { NetworkError } from '@/api/errors'
 import type { CatalogItem, ItemRecord, LogRecord, MergedItem, SearchFilter, StoreRecord, Tab, Toast } from '@/types'
 import { useFoodLog } from '@/hooks/useFoodLog'
 import { taipeiIso, taipeiToday } from '@/lib/day'
+import { parseWeightRange, type WeightRange } from '@/lib/trends'
 import { formatLoggedToast, THEME_COLOR_DARK, THEME_COLOR_LIGHT } from '@/lib/format'
 import { formatRemain, fromGrams, fromQty, itemMacros, parseTargets, remaining, sumLogs } from '@/lib/nutrition'
 import { buildIndex, frequentChips, norm } from '@/data/search'
@@ -109,6 +110,7 @@ export default function App(props: AppProps = {}) {
   const [storeUi, setStoreUi] = useState<StoreUi>(null)
   const [dupStore, setDupStore] = useState<{ id: string; name: string } | null>(null)
   const [nowTick, setNowTick] = useState(() => now())
+  const [weightRange, setWeightRange] = useState<WeightRange>(() => parseWeightRange(get('foodlog.weightRange')))
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchBtnRef = useRef<HTMLButtonElement>(null)
   const seenFailed = useRef(new Set<string>())
@@ -518,6 +520,9 @@ export default function App(props: AppProps = {}) {
           retrying={fl.retrying}
           staleToday={fl.staleToday}
           weightFail={weightFail}
+          range={weightRange}
+          onRange={(r) => { setWeightRange(r); set('foodlog.weightRange', r) }}
+          weightDays={data?.weightDays}
         />
       )}
       {tab === 'items' && (
