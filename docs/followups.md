@@ -21,3 +21,9 @@
 - 預設帶入 deploy/gas-url，讓使用者只需要填密鑰。
 - 店家 Sheet 品項第二行拿掉「店家 ·」，只留「上次 10/11 · 1 份」。（Winter P2）
 - 確認「Kyujin麵」12:30 的時間是 e2e 假資料還是時區錯誤；如果是時區錯誤，升級為 P1。
+
+# v1.1.3 候選（2026-10-12）
+- 體重：沒有平均的時候，拿掉「還不到 7 天」下面那行「7 日平均」。這一區的高度要和有大字時一樣，切換區間時圖才不會跳動。（Winter P2）
+- e2e 補拍一張首頁截圖：熱量超過、蛋白質還沒超過的情況。（Winter P2）
+- Playwright 要裝進專案自己的 devDependencies，不再依賴 /workspace/photo-repro。（Ningning）
+- docs/architecture/backend-v2-PRD.* 不 commit 進 repo（裡面有 Mia 的 email，repo 是公開的），只留在共用電腦上。

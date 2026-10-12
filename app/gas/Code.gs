@@ -18,7 +18,17 @@ function doPost(e) {
 
 function doGet(e) {
   var p = (e && e.parameter) || {};
-  if (!p.secret) return respond_({ ok: true, service: 'food-log', version: API_VERSION });
+  if (!p.secret) {
+    var schemaErr = ensureSchema_();
+    var text = { textFixes: 0, version: PropertiesService.getScriptProperties().getProperty(TEXT_COLS_FLAG_KEY) || '' };
+    if (!schemaErr) text = ensureTextCols_();
+    return respond_({
+      ok: true,
+      service: 'food-log',
+      version: API_VERSION,
+      migration: { textFixes: text.textFixes, version: text.version }
+    });
+  }
   return respond_(handle_({ secret: p.secret, action: 'read' }));
 }
 
@@ -36,6 +46,7 @@ function handle_(req) {
     if (!checkSecret_(req.secret)) return fail_('unauthorized', '共享密鑰不正確');
     var schemaErr = ensureSchema_();
     if (schemaErr) return schemaErr;
+    ensureTextCols_();
     var kyujin = req.client === 'kyujin';
     switch (req.action) {
       case 'read':          return readAll_(req.since);
@@ -119,14 +130,32 @@ function rows_(table) {
   var out = [];
   for (var r = 1; r < values.length; r++) {
     var obj = { __row: r + 1 };
-    for (var c = 0; c < header.length; c++) obj[header[c]] = normalizeCell_(values[r][c]);
+    for (var c = 0; c < header.length; c++) obj[header[c]] = normalizeCell_(values[r][c], String(header[c] || ''));
     out.push(obj);
   }
   return out;
 }
 
-function normalizeCell_(v) {
-  if (v instanceof Date) return taipeiIso_(v.getTime());
+function isDate_(v) {
+  return Object.prototype.toString.call(v) === '[object Date]';
+}
+
+function normalizeCell_(v, col) {
+  col = col || '';
+  if (col === 'src') {
+    if (isDate_(v)) return taipeiDay_(v).slice(5, 10) === '07-11' ? '7-11' : taipeiIso_(v.getTime());
+    if (typeof v === 'string' && /^\d{4}-07-11(?:$|T)/.test(v)) return '7-11';
+    return v;
+  }
+  if (col === 'day') {
+    if (isDate_(v)) return taipeiDay_(v);
+    if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
+    return v;
+  }
+  if ((col === 'ts' || col === 'updated_at' || col === 'last_eaten_at') && isDate_(v)) {
+    return taipeiIso_(v.getTime());
+  }
+  if (isDate_(v)) return taipeiIso_(v.getTime());
   return v;
 }
 
@@ -134,6 +163,53 @@ function toCell_(v) {
   if (v === undefined || v === null) return '';
   if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
   return v;
+}
+
+function isTextCol_(table, col) {
+  var list = TEXT_COLS[table] || [];
+  return list.indexOf(col) >= 0;
+}
+
+/** 先把文字欄設成 @，再 setValues。不要對整列 setNumberFormat('@')，否則 kcal 會變成文字，nutritionOk_ 的 typeof number 會失敗。 */
+function writeRow_(sh, rowIndex, cols, values) {
+  var table = sh.getName();
+  var i;
+  for (i = 0; i < cols.length; i++) {
+    if (isTextCol_(table, cols[i])) sh.getRange(rowIndex, i + 1).setNumberFormat('@');
+  }
+  sh.getRange(rowIndex, 1, 1, cols.length).setValues([values]);
+}
+
+function writeCell_(sh, rowIndex, colIndex, colName, value) {
+  var range = sh.getRange(rowIndex, colIndex);
+  if (isTextCol_(sh.getName(), colName)) range.setNumberFormat('@');
+  range.setValue(value);
+}
+
+function textFixesTotal_(counts) {
+  return (counts.Items || 0) + (counts.Logs || 0) + (counts.Stores || 0) + (counts.Weights || 0);
+}
+
+/**
+ * 文字欄遷移：ScriptProperties 旗標 + Lock，只跑一次。函式本身冪等。
+ * 已跑過就回 textFixes: 0。拿不到鎖且尚未跑過時回目前旗標（可能是空字串）與 0，下次請求再試。
+ */
+function ensureTextCols_() {
+  var props = PropertiesService.getScriptProperties();
+  var cur = props.getProperty(TEXT_COLS_FLAG_KEY) || '';
+  if (cur === TEXT_COLS_FLAG) return { textFixes: 0, version: TEXT_COLS_FLAG };
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(LOCK_WAIT_MS)) return { textFixes: 0, version: cur };
+  try {
+    cur = props.getProperty(TEXT_COLS_FLAG_KEY) || '';
+    if (cur === TEXT_COLS_FLAG) return { textFixes: 0, version: TEXT_COLS_FLAG };
+    var counts = migrateTextColumns_(SpreadsheetApp.getActiveSpreadsheet());
+    props.setProperty(TEXT_COLS_FLAG_KEY, TEXT_COLS_FLAG);
+    SpreadsheetApp.flush();
+    return { textFixes: textFixesTotal_(counts), version: TEXT_COLS_FLAG };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function strip_(obj) {
@@ -224,7 +300,7 @@ function bumpLastEaten_(storeId, ts) {
   if (prev && prev >= next) return;
   var sh = sheet_('Stores');
   var c = header_(sh).indexOf('last_eaten_at');
-  if (c >= 0) sh.getRange(store.__row, c + 1).setValue(toCell_(next));
+  if (c >= 0) writeCell_(sh, store.__row, c + 1, 'last_eaten_at', toCell_(next));
 }
 
 function resolveLogSource_(record, kyujin) {
@@ -286,12 +362,13 @@ function appendLog_(table, record, kyujin) {
   toWrite.name = name;
   toWrite.source = source;
   toWrite.store = storeId;
-  var row = header_(sh).map(function (c) {
+  var cols = header_(sh);
+  var row = cols.map(function (c) {
     if (c === 'deleted') return toCell_(!!record.deleted);
     if (c === 'updated_at') return now;
     return toCell_(toWrite[c]);
   });
-  sh.appendRow(row);
+  writeRow_(sh, sh.getLastRow() + 1, cols, row);
   if (storeId) bumpLastEaten_(storeId, record.ts);
   return { ok: true, record: strip_(findById_('Logs', record.id)) };
 }
@@ -332,10 +409,10 @@ function updateLog_(table, id, patch, kyujin) {
   Object.keys(patch || {}).forEach(function (key) {
     if (key === 'id' || !allowed[key]) return;
     var c = cols.indexOf(key);
-    if (c >= 0) sh.getRange(existing.__row, c + 1).setValue(toCell_(patch[key]));
+    if (c >= 0) writeCell_(sh, existing.__row, c + 1, key, toCell_(patch[key]));
   });
   var uc = cols.indexOf('updated_at');
-  if (uc >= 0) sh.getRange(existing.__row, uc + 1).setValue(now);
+  if (uc >= 0) writeCell_(sh, existing.__row, uc + 1, 'updated_at', now);
   return { ok: true, record: strip_(findById_('Logs', id)) };
 }
 
@@ -356,7 +433,7 @@ function softDelete_(table, id, kyujin) {
   var now = nowIso_();
   sh.getRange(existing.__row, cols.indexOf('deleted') + 1).setValue('TRUE');
   var uc = cols.indexOf('updated_at');
-  if (uc >= 0) sh.getRange(existing.__row, uc + 1).setValue(now);
+  if (uc >= 0) writeCell_(sh, existing.__row, uc + 1, 'updated_at', now);
   if (table === 'Stores') {
     var items = rows_('Items');
     var itemSh = sheet_('Items');
@@ -367,7 +444,7 @@ function softDelete_(table, id, kyujin) {
       if (String(items[i].store || '') !== String(id)) continue;
       if (isDeleted_(items[i])) continue;
       if (idel >= 0) itemSh.getRange(items[i].__row, idel + 1).setValue('TRUE');
-      if (iuc >= 0) itemSh.getRange(items[i].__row, iuc + 1).setValue(now);
+      if (iuc >= 0) writeCell_(itemSh, items[i].__row, iuc + 1, 'updated_at', now);
     }
   }
   return { ok: true, record: strip_(findById_(table, id)) };
@@ -400,7 +477,7 @@ function restore_(table, id, kyujin) {
   var now = nowIso_();
   sh.getRange(existing.__row, cols.indexOf('deleted') + 1).setValue('FALSE');
   var uc = cols.indexOf('updated_at');
-  if (uc >= 0) sh.getRange(existing.__row, uc + 1).setValue(now);
+  if (uc >= 0) writeCell_(sh, existing.__row, uc + 1, 'updated_at', now);
   if (table === 'Stores') {
     var items = rows_('Items');
     var itemSh = sheet_('Items');
@@ -412,7 +489,7 @@ function restore_(table, id, kyujin) {
       if (!isDeleted_(items[j])) continue;
       if (String(items[j].updated_at) !== String(oldUpdated)) continue;
       if (idel >= 0) itemSh.getRange(items[j].__row, idel + 1).setValue('FALSE');
-      if (iuc >= 0) itemSh.getRange(items[j].__row, iuc + 1).setValue(now);
+      if (iuc >= 0) writeCell_(itemSh, items[j].__row, iuc + 1, 'updated_at', now);
     }
   }
   return { ok: true, record: strip_(findById_(table, id)) };
@@ -471,10 +548,10 @@ function upsertItem_(record, kyujin) {
   if (toWrite.deleted == null) toWrite.deleted = false;
   if (existing) {
     cols.forEach(function (c, i) {
-      if (c in toWrite) sh.getRange(existing.__row, i + 1).setValue(toCell_(toWrite[c]));
+      if (c in toWrite) writeCell_(sh, existing.__row, i + 1, c, toCell_(toWrite[c]));
     });
   } else {
-    sh.appendRow(cols.map(function (c) { return toCell_(toWrite[c]); }));
+    writeRow_(sh, sh.getLastRow() + 1, cols, cols.map(function (c) { return toCell_(toWrite[c]); }));
   }
   return { ok: true, record: strip_(findById_('Items', id)) };
 }
@@ -525,10 +602,10 @@ function upsertStore_(record, kyujin) {
   if (existing) {
     cols.forEach(function (c, i) {
       if (c === 'last_eaten_at' && !('last_eaten_at' in record)) return;
-      if (c in toWrite) sh.getRange(existing.__row, i + 1).setValue(toCell_(toWrite[c]));
+      if (c in toWrite) writeCell_(sh, existing.__row, i + 1, c, toCell_(toWrite[c]));
     });
   } else {
-    sh.appendRow(cols.map(function (c) { return toCell_(toWrite[c]); }));
+    writeRow_(sh, sh.getLastRow() + 1, cols, cols.map(function (c) { return toCell_(toWrite[c]); }));
   }
   return { ok: true, record: strip_(findById_('Stores', id)) };
 }
@@ -558,8 +635,8 @@ function upsertWeight_(record, _kyujin) {
   var now = nowIso_();
   if (live) {
     sh.getRange(live.__row, cols.indexOf('kg') + 1).setValue(kg);
-    sh.getRange(live.__row, cols.indexOf('ts') + 1).setValue(toCell_(record.ts));
-    sh.getRange(live.__row, cols.indexOf('updated_at') + 1).setValue(now);
+    writeCell_(sh, live.__row, cols.indexOf('ts') + 1, 'ts', toCell_(record.ts));
+    writeCell_(sh, live.__row, cols.indexOf('updated_at') + 1, 'updated_at', now);
     return { ok: true, overwritten: true, record: strip_(findById_('Weights', live.id)) };
   }
   var row = cols.map(function (c) {
@@ -567,7 +644,7 @@ function upsertWeight_(record, _kyujin) {
     if (c === 'updated_at') return now;
     return toCell_(record[c]);
   });
-  sh.appendRow(row);
+  writeRow_(sh, sh.getLastRow() + 1, cols, row);
   return { ok: true, record: strip_(findById_('Weights', record.id)) };
 }
 

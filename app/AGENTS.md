@@ -53,7 +53,7 @@
 ## 資料模型與 API 合約
 
 - Sheet 分頁與欄位定義在 `gas/Schema.gs` 的 `SCHEMA`，說明在 README 的「Sheet 分頁與欄位」和 `../docs/spec/v1.md`。
-- 五個分頁：Items（主鍵 `id`）、Logs（主鍵 `id`）、Weights（主鍵 `day`）、Stores（主鍵 `id`）、Config（主鍵 `key`）。Items 最後加 `store`；Logs 最後加 `source`、`store`。
+- 五個分頁：Items（主鍵 `id`）、Logs（主鍵 `id`）、Weights（主鍵 `day`）、Stores（主鍵 `id`）、Config（主鍵 `key`）。Items 最後加 `store`；Logs 最後加 `source`、`store`。Items／Logs／Stores／Weights 的文字欄（含 `src`、`day`、`id`、`ts`、`updated_at`）寫入前要 `setNumberFormat('@')` 再 `setValues`。不要用 `appendRow` 寫這些分頁，否則試算表會把 `'7-11'` 和 `'YYYY-MM-DD'` 收成 Date。
 - 前端一律 `POST`、`Content-Type: text/plain`，body 是 `{ secret, action, ... }`。action 有 `read`、`append`、`update`、`softDelete`、`restore`、`upsertItem`、`upsertStore`、`upsertWeight`、`setConfig`、`history`、`summary`、`trends`。參數與回傳見 README 的 API 表和 `gas/Code.gs` 檔頭。`history`、`summary`、`trends` 不進待送佇列。`read` 回 `stores`（沒有就當 `[]`）。
 - 回應是 `{ ok: true, ... }` 或 `{ ok: false, error, message }`。`error` 代碼只有：`unauthorized`、`bad_json`、`bad_action`、`bad_table`、`bad_record`、`not_found`、`busy`、`server_error`、`forbidden`、`duplicate_name`、`schema_outdated`。
 - 要加欄位時：改 `SCHEMA`，同步 `src/types.ts`、`src/data/codec.ts`、規格，加測試，跑 `npm run build:gas`。已上線的 Sheet：後端第一次收到請求會在 LockService 裡自動 migrate，並把 `schema_version` 寫進 Config，之後跳過。編輯器的 `migrateFoodLog` 仍可用（只補缺的，不清資料、不碰密鑰）。`setupFoodLog` 也可以再跑，只補缺的表和 Config。**不要改既有欄位的名稱或順序**。骨架或錯誤空畫面不要用 `DEFAULT_CONFIG` 的 2000 去畫剩餘。

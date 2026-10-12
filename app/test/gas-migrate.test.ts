@@ -29,6 +29,10 @@ function seedOld(env: ReturnType<typeof loadGas>) {
   return { items, logs }
 }
 
+function isDateCell(v: unknown) {
+  return Object.prototype.toString.call(v) === '[object Date]'
+}
+
 test('migrateFoodLog 補 Stores 與新欄，舊儲存格不動；再跑一次是空陣列', () => {
   const env = loadGas()
   const { items, logs } = seedOld(env)
@@ -42,13 +46,28 @@ test('migrateFoodLog 補 Stores 與新欄，舊儲存格不動；再跑一次是
   const afterLogs = logs.getDataRange().getValues()
   expect(afterItems[0].slice(0, OLD_ITEMS.length)).toEqual(OLD_ITEMS)
   expect(afterItems[1].slice(0, OLD_ITEMS.length)).toEqual(beforeItems[1])
+  expect(afterItems[1][6]).toBe('其他')
   expect(afterLogs[0].slice(0, OLD_LOGS.length)).toEqual(OLD_LOGS)
-  expect(afterLogs[1].slice(0, OLD_LOGS.length)).toEqual(beforeLogs[1])
+  const beforeDay = beforeLogs[1][4]
+  const afterRow = afterLogs[1]
+  if (isDateCell(beforeDay)) expect(afterRow[4]).toBe('2026-10-09')
+  else expect(afterRow[4]).toBe(beforeDay)
+  expect(afterRow[7]).toBe('其他')
+  expect(afterRow[1]).toEqual(beforeLogs[1][1])
+  expect(isDateCell(afterRow[1])).toBe(isDateCell(beforeLogs[1][1]))
+  expect(afterRow[5]).toBe(beforeLogs[1][5])
+  expect(afterRow[6]).toBe(beforeLogs[1][6])
+  expect(afterRow.slice(8, OLD_LOGS.length)).toEqual(beforeLogs[1].slice(8, OLD_LOGS.length))
+  expect(report.textFixes.Items).toBe(0)
+  expect(report.textFixes.Logs).toBeGreaterThanOrEqual(1)
+  expect(report.textFixes.Stores).toBe(0)
+  expect(report.textFixes.Weights).toBeGreaterThanOrEqual(1)
   const again = env.g.migrateFoodLog()
   expect(again.created).toEqual([])
   expect(again.addedColumns.Items).toEqual([])
   expect(again.addedColumns.Logs).toEqual([])
   expect(again.addedColumns.Stores).toEqual([])
+  expect(again.textFixes).toEqual({ Items: 0, Logs: 0, Stores: 0, Weights: 0 })
   expect(items.getDataRange().getValues()[1].slice(0, OLD_ITEMS.length)).toEqual(beforeItems[1])
   expect(configValue(env, 'schema_version')).toBe(String(env.g.SCHEMA_VERSION))
 })

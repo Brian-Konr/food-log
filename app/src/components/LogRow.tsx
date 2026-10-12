@@ -44,7 +44,8 @@ export function LogRow(props: {
   } else if (storeName) {
     second = <>{storeName} · {qty}{tail}</>
   } else {
-    second = <>{log.src} · {qty}{tail}</>
+    const known = log.src === '7-11' || log.src === '全家' || log.src === '其他'
+    second = known ? <>{log.src} · {qty}{tail}</> : <>{qty}{tail}</>
   }
   const fading = log.deleted
   return (

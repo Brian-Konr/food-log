@@ -489,6 +489,111 @@ try {
     range: '3M',
     weights: w60,
   })
+
+  step('v1.1.3 新增 7-11 品項')
+  await pg.bringToFront()
+  await pg.setViewportSize({ width: 390, height: 844 })
+  await pg.evaluate(() => {
+    localStorage.removeItem('foodlog.mockFailWrites')
+    localStorage.removeItem('foodlog.mockFailReads')
+    localStorage.removeItem('foodlog.mockDelayMs')
+    localStorage.removeItem('foodlog.forceOffline')
+  })
+  await pg.getByRole('navigation', { name: '分頁' }).getByText('品項', { exact: true }).click(); await wait(pg, 500)
+  await pg.getByRole('button', { name: '手動新增品項' }).click(); await wait(pg, 400)
+  const itemDlg = pg.getByRole('dialog')
+  await itemDlg.getByLabel('品名').fill('統一陽光無加糖')
+  await itemDlg.getByRole('button', { name: '7-11' }).click()
+  await itemDlg.getByLabel('熱量').fill('87')
+  await itemDlg.getByLabel('蛋白質').fill('20.6')
+  await itemDlg.getByLabel('碳水').fill('10')
+  await itemDlg.getByLabel('脂肪').fill('0')
+  await itemDlg.getByRole('button', { name: '儲存' }).click(); await wait(pg, 800)
+  const itemsBody = await pg.locator('body').innerText()
+  if (!itemsBody.includes('統一陽光無加糖')) fail('品項清單沒有統一陽光無加糖')
+  if (!itemsBody.includes('7-11')) fail('品項內文沒有 7-11')
+  if (itemsBody.includes('2026-07-11')) fail('品項內文出現 2026-07-11')
+
+  step('v1.1.3 記錄 7-11 品項')
+  await pg.getByRole('navigation', { name: '分頁' }).getByText('今天', { exact: true }).click(); await wait(pg, 400)
+  await pg.getByText(/^搜尋店家/).first().click(); await wait(pg, 400)
+  await pg.keyboard.type('統一陽光無加糖'); await wait(pg, 700)
+  await pg.getByText('統一陽光無加糖').first().click(); await wait(pg, 600)
+  await pg.getByRole('button', { name: /^記錄/ }).last().click(); await wait(pg, 800)
+  const todayBody = await pg.locator('body').innerText()
+  if (!todayBody.includes('7-11')) fail('首頁第二行沒有 7-11')
+  if (todayBody.includes('2026-07-11') || todayBody.includes('T08:00')) fail('首頁出現時間字串')
+  await pg.reload(); await wait(pg, 1500)
+  const today2 = await pg.locator('body').innerText()
+  if (!today2.includes('7-11')) fail('reload 後沒有 7-11')
+  if (today2.includes('2026-07-11') || today2.includes('T08:00')) fail('reload 後出現時間字串')
+
+  step('v1.1.3 編輯 7-11 紀錄')
+  await pg.getByRole('button', { name: /統一陽光無加糖/ }).first().click(); await wait(pg, 500)
+  await pg.getByRole('button', { name: '儲存' }).click(); await wait(pg, 800)
+  if (await pg.getByText('沒有存到').count()) fail('編輯後沒有存到')
+  const afterEdit = await pg.locator('body').innerText()
+  if (!afterEdit.includes('7-11')) fail('編輯後沒有 7-11')
+  await shot(pg, '7-11副標題')
+
+  step('v1.1.3 壞掉的 ISO src 要顯示 7-11 副標')
+  await pg.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('foodlog.mockdb') || '{}')
+    const off = new Date(Date.now() + 8 * 3600 * 1000)
+    const day = off.toISOString().slice(0, 10)
+    const ts = `${day}T12:00:00+08:00`
+    db.logs = db.logs || []
+    db.logs.push({
+      id: 'l:bad-src', ts, deleted: false, updated_at: ts, day: `${day}T08:00:00+08:00`,
+      item_id: 'u:bad-src', name: '壞掉的來源', src: '2026-07-11T08:00:00+08:00',
+      qty: 1, grams: null, kcal: 87, protein: 20.6, fat: 0, carb: 10, source: 'app', store: '',
+    })
+    localStorage.setItem('foodlog.mockdb', JSON.stringify(db))
+  })
+  await pg.reload(); await wait(pg, 1500)
+  const badRow = pg.getByRole('button', { name: /壞掉的來源/ })
+  if (!(await badRow.count())) fail('沒有壞掉的來源')
+  const badText = await badRow.first().innerText()
+  if (!badText.includes('7-11')) fail('壞掉的 ISO src 沒有顯示 7-11 副標')
+  if (badText.includes('2026-07-11T') || badText.includes('T08:00')) fail('壞掉的來源顯示了時間字串')
+  await badRow.first().click(); await wait(pg, 500)
+  await pg.getByRole('button', { name: '儲存' }).click(); await wait(pg, 800)
+  if (await pg.getByText('沒有存到').count()) fail('壞掉的來源編輯沒存到')
+
+  step('v1.1.3 重試不重複')
+  await pg.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('foodlog.mockdb') || '{}')
+    const off = new Date(Date.now() + 8 * 3600 * 1000)
+    const day = off.toISOString().slice(0, 10)
+    const ts = `${day}T12:00:00+08:00`
+    db.items = db.items || []
+    db.items.push({
+      id: 'u:v113-retry', ts, deleted: false, updated_at: ts, kind: '自建', base_id: '',
+      src: '7-11', name: 'v113重試', serving: '1 份', serving_g: null,
+      kcal: 50, protein: 1, fat: 0, carb: 1, fav: false, created_by: 'app', store: '',
+    })
+    localStorage.setItem('foodlog.mockdb', JSON.stringify(db))
+    localStorage.setItem('foodlog.mockFailWrites', '1')
+  })
+  await pg.reload(); await wait(pg, 1500)
+  await pg.getByText(/^搜尋店家/).first().click(); await wait(pg, 400)
+  await pg.keyboard.type('v113重試'); await wait(pg, 700)
+  await pg.getByText('v113重試').first().click(); await wait(pg, 600)
+  await pg.getByRole('button', { name: /^記錄/ }).last().click(); await wait(pg, 800)
+  const retryFail = pg.getByText('沒有存到 · 重試')
+  if (!(await retryFail.count())) fail('重試案例沒有出現沒有存到')
+  await retryFail.first().click(); await wait(pg, 400)
+  await pg.getByRole('button', { name: '重試' }).click(); await wait(pg, 800)
+  await pg.getByText('沒有存到 · 重試').first().waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+  if (await pg.getByText('沒有存到 · 重試').count()) fail('重試後失敗字還在')
+  const nRetry = await pg.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('foodlog.mockdb') || '{}')
+    return (db.logs || []).filter((l) => l.name === 'v113重試' && !l.deleted).length
+  })
+  if (nRetry !== 1) fail(`v113重試 logs 長度是 ${nRetry}，應為 1`)
+  await pg.keyboard.press('Escape'); await wait(pg, 300)
+  await shot(pg, '7-11重試')
+  await pg.evaluate(() => localStorage.removeItem('foodlog.mockFailWrites'))
 } finally {
   await b.close()
   stopServer()

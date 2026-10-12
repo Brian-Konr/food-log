@@ -8,7 +8,12 @@ let VmDate: DateConstructor = Date
 class FakeSheet {
   data: Cell[][] = []
   frozen = 0
+  maxRows = 1000
+  textCells = new Set<string>()
+  formats = new Map<string, string>()
   constructor(public name: string) {}
+  getName() { return this.name }
+  getMaxRows() { return this.maxRows }
   getLastRow() { return this.data.length }
   getLastColumn() { return this.data.reduce((m, r) => Math.max(m, r.length), 0) }
   getDataRange() { return { getValues: () => this.data.map((r) => { const w = this.getLastColumn(); return Array.from({ length: w }, (_, i) => r[i] ?? '') }) } }
@@ -17,13 +22,23 @@ class FakeSheet {
     let text = false
     const range = {
       getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => sh.data[row - 1 + i]?.[col - 1 + j] ?? '')),
-      setValues: (vals: Cell[][]) => vals.forEach((r, i) => r.forEach((v, j) => sh.set(row + i, col + j, v))),
+      setValues: (vals: Cell[][]) => { vals.forEach((r, i) => r.forEach((v, j) => sh.set(row + i, col + j, v))); return range },
       setValue: (v: Cell) => { sh.set(row, col, v, text); return range },
-      setNumberFormat: (f: string) => { text = f === '@'; if (text) sh.textCells.add(`${row}:${col}`); return range },
+      setNumberFormat: (f: string) => {
+        text = f === '@'
+        for (let i = 0; i < nr; i++) {
+          for (let j = 0; j < nc; j++) {
+            const key = `${row + i}:${col + j}`
+            sh.formats.set(key, f)
+            if (f === '@') sh.textCells.add(key)
+            else sh.textCells.delete(key)
+          }
+        }
+        return range
+      },
     }
     return range
   }
-  textCells = new Set<string>()
   set(row: number, col: number, v: Cell, text = false) {
     while (this.data.length < row) this.data.push([])
     const r = this.data[row - 1]
@@ -34,6 +49,11 @@ class FakeSheet {
   setFrozenRows(n: number) { this.frozen = n }
 }
 function sheetCoerce(v: Cell): Cell {
+  if (typeof v === 'string' && v === '7-11') {
+    const taipeiYear = new Date(Date.now() + 8 * 3600 * 1000).getUTCFullYear()
+    return new VmDate(Date.UTC(taipeiYear, 6, 11))
+  }
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return new VmDate(v + 'T00:00:00Z')
   if (v === 'TRUE') return true
   if (v === 'FALSE') return false
   if (typeof v === 'string' && v !== '' && !isNaN(Number(v))) return Number(v)
@@ -52,6 +72,7 @@ export function loadGas(opts: { lockBusy?: boolean } = {}) {
   const logs: string[] = []
   const shares: string[] = []
   let uuid = 0
+  let lockHeld = false
   const ss = {
     getSheetByName: (n: string) => sheets.get(n) ?? null,
     insertSheet: (n: string) => { const s = new FakeSheet(n); sheets.set(n, s); return s },
@@ -61,7 +82,17 @@ export function loadGas(opts: { lockBusy?: boolean } = {}) {
   }
   const ctx: Record<string, unknown> = {
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, flush: () => {} },
-    LockService: { getScriptLock: () => ({ tryLock: () => !opts.lockBusy, releaseLock: () => {} }) },
+    LockService: {
+      getScriptLock: () => ({
+        tryLock: () => {
+          if (opts.lockBusy) return false
+          if (lockHeld) return false
+          lockHeld = true
+          return true
+        },
+        releaseLock: () => { lockHeld = false },
+      }),
+    },
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k: string) => props.get(k) ?? null, setProperty: (k: string, v: string) => props.set(k, v) }) },
     ContentService: { MimeType: { JSON: 'application/json' }, createTextOutput: (s: string) => ({ body: s, setMimeType() { return this } }) },
     DriveApp: {
@@ -103,6 +134,7 @@ export function loadGas(opts: { lockBusy?: boolean } = {}) {
   }
   vm.createContext(ctx)
   VmDate = vm.runInContext('Date', ctx)
+  ;(ctx as { Date: DateConstructor }).Date = VmDate
   for (const f of ['Schema.gs', 'Setup.gs', 'Code.gs', 'Trends.gs']) {
     vm.runInContext(readFileSync(resolve(import.meta.dirname, '../gas', f), 'utf8'), ctx, { filename: f })
   }

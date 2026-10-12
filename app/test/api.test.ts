@@ -212,6 +212,38 @@ test('busy 三次用盡後 online 仍為 true、列仍在 pending', async () => 
   assert.equal(api.peek()!.logs.find((r) => r.id === 'l-busy')?.__write, 'pending')
 })
 
+test('retryFailed 把 ISO src 收成 7-11 且沿用同一 id', async () => {
+  const storage = memoryStorage()
+  const inner = createMockAdapter({ storage, now: () => NOW })
+  const seen: { id: string; src: string }[] = []
+  const adapter = {
+    kind: 'test',
+    call: (op: Op) => {
+      if (op.action === 'append') {
+        const rec = op.record
+        if (String(rec.src).includes('T08:00')) {
+          return Promise.resolve({ ok: false as const, error: 'bad_record', message: 'src 只能是 7-11、全家或其他' })
+        }
+        seen.push({ id: rec.id, src: String(rec.src) })
+      }
+      return inner.call(op)
+    },
+  }
+  const api = createApi({ adapter, storage, now: () => NOW })
+  await api.ready
+  await api.appendLog({ id: 'same-id', ...logFields, src: '2026-07-11T08:00:00+08:00' as typeof logFields.src })
+  assert.equal(api.status().failed.length, 1)
+  const d0 = await inner.call({ action: 'read' }) as { logs: { id: string }[] }
+  assert.equal(d0.logs.filter((r) => r.id === 'same-id').length, 0)
+  await api.retryFailed()
+  assert.equal(seen.length, 1)
+  assert.equal(seen[0].src, '7-11')
+  assert.equal(seen[0].id, 'same-id')
+  assert.equal(api.status().failed.length, 0)
+  const d1 = await inner.call({ action: 'read' }) as { logs: { id: string }[] }
+  assert.equal(d1.logs.filter((r) => r.id === 'same-id').length, 1)
+})
+
 test('P1：不能補記未來的體重日期（台北時間），今天可以', async () => {
   const storage = memoryStorage()
   const NOW = Date.parse('2026-10-10T23:30:00+08:00')

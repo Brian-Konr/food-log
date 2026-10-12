@@ -10,7 +10,8 @@ import { ResultRow } from '@/components/ResultRow'
 import { LogRow } from '@/components/LogRow'
 import { SyncBadge } from '@/components/SyncBadge'
 import { UndoToast } from '@/components/UndoToast'
-import { merged, logFields } from './helpers'
+import type { LogRecord } from '@/types'
+import { merged, logFields, storeFields } from './helpers'
 
 afterEach(() => cleanup())
 
@@ -77,6 +78,42 @@ test('LogRow 寫蛋白 20.0 g', () => {
     />,
   )
   expect(screen.getByRole('button').textContent).toContain('蛋白 20.0 g')
+})
+
+test('LogRow 來源只顯示 7-11／全家／其他', () => {
+  const t711 = render(<LogRow log={logFields({ id: 'l-711', src: '7-11' })} onOpen={() => {}} />).container.textContent || ''
+  expect(t711).toContain('7-11 · 1 份')
+  cleanup()
+  const iso = render(
+    <LogRow log={logFields({ id: 'l-iso', src: '2026-07-11T08:00:00+08:00' as LogRecord['src'] })} onOpen={() => {}} />,
+  ).container.textContent || ''
+  expect(iso).toContain('1 份')
+  expect(iso).not.toContain('2026-07-11')
+  expect(iso).not.toContain('T08:00')
+  expect(iso).not.toContain('7-11')
+  cleanup()
+  expect(render(<LogRow log={logFields({ id: 'l-fam', src: '全家' })} onOpen={() => {}} />).container.textContent).toContain('全家')
+  cleanup()
+  expect(render(<LogRow log={logFields({ id: 'l-oth', src: '其他' })} onOpen={() => {}} />).container.textContent).toContain('其他')
+  cleanup()
+  const quick = render(
+    <LogRow
+      log={logFields({ id: 'l-q', source: 'quick', item_id: '', src: '2026-07-11T08:00:00+08:00' as LogRecord['src'] })}
+      onOpen={() => {}}
+    />,
+  ).container.textContent || ''
+  expect(quick).toContain('1 筆')
+  expect(quick).not.toContain('2026-07-11')
+  cleanup()
+  const store = render(
+    <LogRow
+      log={logFields({ id: 'l-st', store: 's:1', src: '2026-07-11T08:00:00+08:00' as LogRecord['src'] })}
+      stores={[storeFields({ id: 's:1', name: '阿財' })]}
+      onOpen={() => {}}
+    />,
+  ).container.textContent || ''
+  expect(store).toContain('阿財')
+  expect(store).not.toContain('2026-07-11')
 })
 
 test('離線時已遇網路失敗的列仍是含待上傳的 button', () => {

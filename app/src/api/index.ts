@@ -2,6 +2,7 @@
 import type { ItemRecord, LogRecord, Snapshot, StoreRecord, WeightRecord } from '@/types'
 import { taipeiIso, taipeiToday } from '@/lib/day'
 import { DEFAULT_CONFIG } from '@/data/defaults'
+import { normalizeSheetSrc } from '@/data/codec'
 import { defaultKv, type Kv } from '@/data/kv'
 import { loadCache, saveCache, snapshotFromCache, toCached, type CachedSnapshot } from '@/data/cache'
 import { NetworkError, PERMANENT_ERRORS, ServerError } from './errors'
@@ -445,7 +446,17 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
         const ids = new Set(moving.map((f) => f.qid))
         failed = failed.filter((f) => !ids.has(f.qid))
       }
-      outbox = [...outbox, ...moving.map((f) => ({ ...f.op, qid: f.qid, queuedAt: f.queuedAt, groupId: f.groupId, label: f.label }))]
+      outbox = [...outbox, ...moving.map((f) => {
+        let op = f.op
+        if (op.action === 'append') {
+          const next = normalizeSheetSrc(op.record.src)
+          if (next !== op.record.src) op = { ...op, record: { ...op.record, src: next as LogRecord['src'] } }
+        } else if (op.action === 'upsertItem') {
+          const next = normalizeSheetSrc(op.record.src)
+          if (next !== op.record.src) op = { ...op, record: { ...op.record, src: next as ItemRecord['src'] } }
+        }
+        return { ...op, qid: f.qid, queuedAt: f.queuedAt, groupId: f.groupId, label: f.label }
+      })]
       await persistQueue()
       emit()
       return flush()

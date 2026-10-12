@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { decodeItem, decodeLog, decodeSnapshot, decodeStore, encodeBool, itemToRow, logToRow, rowToLog, rowToStore, rowToWeight, storeToRow, weightToRow, ITEM_COLS, LOG_COLS, STORE_COLS, WEIGHT_COLS } from '@/data/codec'
+import { decodeItem, decodeLog, decodeSnapshot, decodeStore, encodeBool, itemToRow, logToRow, rowToLog, rowToStore, rowToWeight, storeToRow, weightToRow, ITEM_COLS, LOG_COLS, STORE_COLS, WEIGHT_COLS, normalizeSheetSrc } from '@/data/codec'
 import type { ItemRecord, LogRecord, StoreRecord, WeightRecord } from '@/types'
 
 test('TRUE/FALSE 與空營養素', () => {
@@ -50,6 +50,27 @@ test('舊 Log 沒有 source 解成 app；沒有 store 解成空字串', () => {
 test('沒有 stores 的 snapshot 解成空陣列', () => {
   const s = decodeSnapshot({ version: 1, serverTime: 'x', config: {}, items: [], logs: [], weights: [] })
   expect(s.stores).toEqual([])
+})
+
+test('decodeLog / decodeItem 把 7 月 11 日 ISO src 收成 7-11', () => {
+  expect(decodeLog({ src: '2026-07-11T08:00:00+08:00', day: '2026-10-12T08:00:00+08:00' }).src).toBe('7-11')
+  expect(decodeLog({ src: '2026-07-11T00:00:00.000Z', day: '2026-10-12' }).src).toBe('7-11')
+  expect(decodeLog({ src: '2027-07-11', day: '2026-10-12' }).src).toBe('7-11')
+  expect(decodeLog({ src: '2026-11-07T00:00:00+08:00', day: '2026-10-12' }).src).toBe('2026-11-07T00:00:00+08:00')
+  expect(decodeLog({ src: '全家', day: '2026-10-12' }).src).toBe('全家')
+  expect(decodeLog({ src: '其他', day: '2026-10-12' }).src).toBe('其他')
+  expect(decodeLog({ src: '', day: '2026-10-12' }).src).toBe('')
+  expect(decodeLog({ src: '全家', day: '2026-10-12T08:00:00+08:00' }).day).toBe('2026-10-12')
+  expect(decodeItem({ src: '2026-07-11T08:00:00+08:00' }).src).toBe('7-11')
+  expect(decodeItem({ src: '全家' }).src).toBe('全家')
+  const snap = decodeSnapshot({
+    logs: [{ src: '2026-07-11T08:00:00+08:00', day: '2026-10-12T08:00:00+08:00', name: 'x' }],
+    items: [{ src: '2027-07-11', name: 'y' }],
+  })
+  expect(snap.logs[0].src).toBe('7-11')
+  expect(snap.logs[0].day).toBe('2026-10-12')
+  expect(snap.items[0].src).toBe('7-11')
+  expect(normalizeSheetSrc('2026-07-11')).toBe('7-11')
 })
 
 test('Stores 欄位往返', () => {

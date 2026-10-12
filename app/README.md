@@ -101,6 +101,8 @@ Kyujin 提醒連結是 `https://brian-konr.github.io/food-log/#weight`。
 
 v1.1.1 沒有新欄位，不要為了它跑 migrate；要更新 Apps Script 只是因為 Weights 的讀取窗口變了。
 
+v1.1.3 沒有新欄位，但寫入改成純文字格式，**要重新部署 Apps Script**。部後端之後打兩次 health（`GET /exec` 不帶密鑰）：第一次的 `migration.textFixes` 是這次改寫的 day／src 格數，第二次必須是 0。不要跑 `rotateSharedSecret`，也不必在編輯器手動執行 `migrateFoodLog`（後端第一次請求會自動跑）。只部署前端不會停止試算表把 `7-11` 和日期轉成 Date。
+
 授權範圍維持 `spreadsheets.currentonly`。不要加 Drive。
 
 如果改用「新增部署作業」，會得到新的網址，要更新 `deploy/gas-url` 並重新部署前端。

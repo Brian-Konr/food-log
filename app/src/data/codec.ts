@@ -14,6 +14,13 @@ const numOrNull = (v: unknown): number | null => {
   return Number.isFinite(n) ? n : null
 }
 
+export function normalizeSheetSrc(v: unknown): string {
+  const s = v === undefined || v === null ? '' : String(v).trim()
+  if (s === '7-11' || s === '全家' || s === '其他') return s
+  if (/^\d{4}-07-11(?:$|T)/.test(s)) return '7-11'
+  return s
+}
+
 export function decodeLog(r: Record<string, unknown>): LogRecord {
   return {
     id: str(r.id),
@@ -23,7 +30,7 @@ export function decodeLog(r: Record<string, unknown>): LogRecord {
     day: str(r.day).slice(0, 10),
     item_id: str(r.item_id),
     name: str(r.name),
-    src: str(r.src) as LogRecord['src'],
+    src: normalizeSheetSrc(r.src) as LogRecord['src'],
     qty: num(r.qty),
     grams: numOrNull(r.grams),
     kcal: num(r.kcal),
@@ -64,7 +71,7 @@ export function decodeItem(r: Record<string, unknown>): ItemRecord {
     updated_at: str(r.updated_at),
     kind: str(r.kind) as ItemRecord['kind'],
     base_id: str(r.base_id),
-    src: str(r.src) as ItemRecord['src'],
+    src: normalizeSheetSrc(r.src) as ItemRecord['src'],
     name: str(r.name),
     serving: str(r.serving),
     serving_g: numOrNull(r.serving_g),

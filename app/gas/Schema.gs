@@ -9,6 +9,17 @@ var SCHEMA = {
   Config:  ['key', 'value', 'updated_at']
 };
 
+var TEXT_COLS = {
+  Items:   ['id', 'ts', 'updated_at', 'kind', 'base_id', 'src', 'name', 'serving', 'created_by', 'store'],
+  Logs:    ['id', 'ts', 'updated_at', 'day', 'item_id', 'name', 'src', 'source', 'store'],
+  Stores:  ['id', 'ts', 'updated_at', 'name', 'last_eaten_at', 'created_by'],
+  Weights: ['day', 'ts', 'updated_at', 'id']
+};
+
+/** ScriptProperties：文字欄遷移已跑過。不要放進 Config，也不要改 SCHEMA_VERSION。 */
+var TEXT_COLS_FLAG_KEY = 'text_cols_version';
+var TEXT_COLS_FLAG = '1';
+
 var LOG_TABLES = ['Logs'];
 var KEY_COL = { Items: 'id', Logs: 'id', Weights: 'day', Stores: 'id', Config: 'key' };
 var SRC_OK = ['7-11', '全家', '其他'];

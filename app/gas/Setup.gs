@@ -32,7 +32,9 @@ function setupFoodLog() {
 function migrateFoodLog() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var report = ensureFoodLogSheets_(ss);
+  report.textFixes = migrateTextColumns_(ss);
   writeSchemaVersion_();
+  PropertiesService.getScriptProperties().setProperty(TEXT_COLS_FLAG_KEY, TEXT_COLS_FLAG);
   Logger.log(JSON.stringify(report));
   return report;
 }
@@ -91,8 +93,57 @@ function newSecret_() {
 }
 
 function formatColText_(sh, col) {
-  var n = Math.max(sh.getLastRow(), 1);
+  var n = sh.getMaxRows();
+  if (!n || n < 1) n = 1;
   sh.getRange(1, col, n, 1).setNumberFormat('@');
+}
+
+function migrateTextColumns_(ss) {
+  var names = ['Items', 'Logs', 'Stores', 'Weights'];
+  var counts = { Items: 0, Logs: 0, Stores: 0, Weights: 0 };
+  var t;
+  for (t = 0; t < names.length; t++) {
+    var name = names[t];
+    var sh = ss.getSheetByName(name);
+    if (!sh) continue;
+    var header = header_(sh);
+    if (!header.length) continue;
+    var textList = TEXT_COLS[name] || [];
+    var i;
+    for (i = 0; i < textList.length; i++) {
+      var idx = header.indexOf(textList[i]);
+      if (idx >= 0) formatColText_(sh, idx + 1);
+    }
+    var values = sh.getDataRange().getValues();
+    var r, c;
+    for (r = 1; r < values.length; r++) {
+      for (c = 0; c < header.length; c++) {
+        var col = String(header[c] || '');
+        var v = values[r][c];
+        var rowIndex = r + 1;
+        var colIndex = c + 1;
+        if (col === 'day') {
+          if (isDate_(v)) {
+            writeCell_(sh, rowIndex, colIndex, 'day', taipeiDay_(v));
+            counts[name]++;
+          } else if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) {
+            writeCell_(sh, rowIndex, colIndex, 'day', v.slice(0, 10));
+            counts[name]++;
+          }
+        } else if (col === 'src') {
+          if (isDate_(v) && taipeiDay_(v).slice(5, 10) === '07-11') {
+            writeCell_(sh, rowIndex, colIndex, 'src', '7-11');
+            counts[name]++;
+          } else if (typeof v === 'string' && /^\d{4}-07-11(?:$|T)/.test(v)) {
+            writeCell_(sh, rowIndex, colIndex, 'src', '7-11');
+            counts[name]++;
+          }
+        }
+      }
+    }
+  }
+  Logger.log('migrateTextColumns_ ' + JSON.stringify(counts));
+  return counts;
 }
 
 function ensureFoodLogSheets_(ss) {
@@ -107,18 +158,21 @@ function ensureFoodLogSheets_(ss) {
     var added = [];
     if (header.length === 0) {
       sh.getRange(1, 1, 1, cols.length).setValues([cols]);
-      if (name === 'Stores') {
-        for (var i = 0; i < cols.length; i++) formatColText_(sh, i + 1);
-      }
+      header = cols.slice();
     } else {
       cols.forEach(function (c) {
         if (header.indexOf(c) < 0) {
           header.push(c);
           sh.getRange(1, header.length).setValue(c);
-          formatColText_(sh, header.length);
           added.push(c);
         }
       });
+    }
+    var textList = TEXT_COLS[name] || [];
+    var i;
+    for (i = 0; i < textList.length; i++) {
+      var idx = header.indexOf(textList[i]);
+      if (idx >= 0) formatColText_(sh, idx + 1);
     }
     if (name === 'Items' || name === 'Logs' || name === 'Stores') addedColumns[name] = added;
     sh.setFrozenRows(1);
