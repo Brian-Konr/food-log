@@ -1,5 +1,7 @@
 # AGENTS.md
 
+> **v2 分支注意**：此檔隨 `app/` 搬到 `apps/food-log/`，路徑已變動（`gas/` → `../../legacy/gas/`，GAS 測試與 `deploy-*.sh`、`build-gas.mjs`、`deploy/` 都在 `../../legacy/`），套件管理改用 `npx -y pnpm@10`；以根目錄 [`AGENTS.md`](../../AGENTS.md) 為準。
+
 給接手這個 repo 的 coding agent。人看的說明在 [`README.md`](README.md)；規格在 [`../docs/spec/v1.1.md`](../docs/spec/v1.1.md)（v1 行為沒寫要改的仍有效），施工計畫在 [`../docs/plans/v1.1.md`](../docs/plans/v1.1.md)。改動前請讀完這份文件。
 
 ## 專案目的與使用者
