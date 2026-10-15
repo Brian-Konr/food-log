@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>food-log v2 system walkthrough</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper: #f5f5f3; --color-paper-2: #ededea; --color-ink: #111111; --color-muted: #5e5e5b;
+      --color-soft: #6a6a65; --color-rule: rgba(17,17,17,0.12); --color-accent: #3e6c00; --color-link: #2e5aa8;
+      --font-sans: 'Geist', 'Noto Sans TC', 'PingFang TC', system-ui, sans-serif;
+      --font-serif: 'Instrument Serif', 'Noto Serif', 'Noto Serif TC', serif;
+      --font-mono: 'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+    body { font-family: var(--font-sans); background: var(--color-paper); color: var(--color-ink); padding: 3rem 2rem; line-height: 1.6; }
+    .container { max-width: 1320px; margin: 0 auto; min-width: 0; }
+    .eyebrow { font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted); margin-bottom: 0.6rem; }
+    h1 { font-family: var(--font-serif); font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem); font-weight: 400; letter-spacing: -0.02em; line-height: 1.1; margin-bottom: 0.6rem; }
+    .subtitle { color: var(--color-muted); max-width: 60rem; }
+    nav.toc { margin: 1.5rem 0 0; display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; font-family: var(--font-mono); font-size: 0.75rem; }
+    nav.toc a { color: var(--color-link); text-decoration: none; }
+    section { margin-top: 3.5rem; padding-top: 2rem; border-top: 1px solid var(--color-rule); }
+    h2 { font-family: var(--font-serif); font-size: 1.75rem; font-weight: 400; letter-spacing: -0.01em; margin-bottom: 0.4rem; }
+    .lead { color: var(--color-muted); max-width: 62rem; margin-bottom: 1.25rem; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    svg { width: 100%; display: block; }
+    .cols { display: grid; grid-template-columns: 1.15fr 1fr 0.9fr; gap: 1rem; margin-top: 1.5rem; }
+    .cols.two { grid-template-columns: 1.2fr 1fr; }
+    .card { background: #ffffff; border: 1px solid var(--color-rule); border-radius: 6px; padding: 1.25rem; min-width: 0; }
+    .card h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.6rem; display: flex; align-items: center; gap: 0.5rem; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+    .dot.ink { background: var(--color-ink); } .dot.muted { background: var(--color-muted); }
+    .dot.coral { background: var(--color-accent); } .dot.link { background: var(--color-link); }
+    .card ul, .card ol { padding-left: 1.2rem; font-size: 0.9rem; }
+    .card li { margin: 0.25rem 0; }
+    ol.steps { counter-reset: s; list-style: none; padding-left: 0; }
+    ol.steps li { counter-increment: s; position: relative; padding-left: 2rem; margin: 0.5rem 0; }
+    ol.steps li::before { content: counter(s); position: absolute; left: 0; top: 0.1rem; font-family: var(--font-mono); font-size: 0.7rem; width: 1.4rem; height: 1.4rem; border: 1px solid var(--color-rule); border-radius: 4px; display: flex; align-items: center; justify-content: center; color: var(--color-muted); background: var(--color-paper); }
+    code { font-family: var(--font-mono); font-size: 0.82em; background: var(--color-paper-2); padding: 0.05rem 0.3rem; border-radius: 3px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--color-rule); vertical-align: top; }
+    th { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-muted); font-weight: 500; }
+    .table-wrap { overflow-x: auto; }
+    .footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--color-rule); font-family: var(--font-mono); font-size: 0.7rem; color: var(--color-muted); }
+    @media (max-width: 860px) { .cols, .cols.two { grid-template-columns: 1fr; } body { padding: 2rem 1rem; } }
+    @media print { .diagram-container { overflow-x: visible; } svg { min-width: 0 !important; } }
+  </style>
+</head>
+<body>
+<div class="container">
+  <p class="eyebrow">Architecture walkthrough · v2 branch @ 254f842 · 2026-10-16</p>
+  <h1>food-log v2：整個系統怎麼串起來</h1>
+  <p class="subtitle">先看全貌，再一層一層往下：前端怎麼記一筆、登入怎麼驗證、同步怎麼保證不重複不遺失、資料放在哪裡。每一節都是「圖 + 關鍵步驟」。</p>
+  <nav class="toc">
+    <a href="#overview">1 · 全貌</a><a href="#frontend">2 · 前端 PWA</a><a href="#auth">3 · 登入驗證</a><a href="#sync">4 · 同步</a><a href="#data">5 · 資料</a><a href="#routes">6 · Worker 路由表</a>
+  </nav>
+
+  <section id="overview">
+    <p class="eyebrow">1 · Overview</p>
+    <h2>全貌：三個地方、一條主線</h2>
+    <p class="lead">手機上的 PWA 永遠先寫本機（所以離線也能記、點下去立刻出現），背景再把「有名字的動作」送到 Cloudflare Worker；Worker 用同一份規則在 D1 定案，再把結果發回每支手機。登入、Kyujin、每日備份都掛在同一個 Worker 上。</p>
+    <div class="diagram-container">
+      <svg viewBox="0 0 1280 664" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="v2-overview-title v2-overview-desc" style="min-width:1280px">
+        <title id="v2-overview-title">food-log v2 system overview</title>
+        <desc id="v2-overview-desc">Architecture overview: the iPhone PWA writes to a local Dexie database through sync-client, which pushes mutations to the Worker's Sync API and pulls changes back; Better Auth handles sign-in and session checks; the Sync API and the Kyujin Bot API both write to D1 with the shared mutators; a daily cron exports D1 to R2.</desc>
+        <defs>
+          <marker id="ov-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5e5e5b"/></marker>
+          <marker id="ov-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#3e6c00"/></marker>
+          <marker id="ov-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f3"/>
+        <rect x="40" y="120" width="280" height="232" rx="8" fill="rgba(17,17,17,0.02)" stroke="rgba(17,17,17,0.1)" stroke-width="0.8"/>
+        <rect x="118" y="124" width="124" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="180" y="133" fill="#6a6a65" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.14em">IPHONE · HOME-SCREEN PWA</text>
+        <rect x="440" y="120" width="320" height="456" rx="8" fill="rgba(17,17,17,0.02)" stroke="rgba(17,17,17,0.1)" stroke-width="0.8"/>
+        <rect x="538" y="124" width="124" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="600" y="133" fill="#6a6a65" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.14em">CLOUDFLARE WORKER · HONO</text>
+        <rect x="880" y="232" width="320" height="344" rx="8" fill="rgba(17,17,17,0.02)" stroke="rgba(17,17,17,0.1)" stroke-width="0.8"/>
+        <rect x="990" y="236" width="100" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="1040" y="245" fill="#6a6a65" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.14em">CLOUDFLARE STORAGE</text>
+        <!-- a UI -> sync-client -->
+        <line x1="144" y1="216" x2="144" y2="264" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#ov-arrow)"/>
+        <!-- b sync-client -> UI (live query) -->
+        <line x1="216" y1="264" x2="216" y2="216" stroke="#5e5e5b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#ov-arrow)"/>
+        <!-- c UI -> Better Auth -->
+        <line x1="288" y1="184" x2="472" y2="184" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#ov-arrow-link)"/>
+        <!-- d sync-client -> Sync API (headline) -->
+        <line x1="288" y1="284" x2="472" y2="284" stroke="#3e6c00" stroke-width="1.4" marker-end="url(#ov-arrow-accent)"/>
+        <!-- e Sync API -> sync-client (pull) -->
+        <line x1="472" y1="308" x2="288" y2="308" stroke="#5e5e5b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#ov-arrow)"/>
+        <!-- f Kyujin -> Bot API -->
+        <line x1="288" y1="408" x2="472" y2="408" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#ov-arrow-link)"/>
+        <!-- g Sync API -> Better Auth (session check) -->
+        <line x1="600" y1="264" x2="600" y2="216" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#ov-arrow)"/>
+        <!-- h Sync API -> D1 -->
+        <line x1="728" y1="296" x2="912" y2="296" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#ov-arrow)"/>
+        <!-- i Bot API -> D1 bottom -->
+        <path d="M 728,408 H 952 Q 960,408 960,400 V 328" fill="none" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#ov-arrow)"/>
+        <!-- j Better Auth -> D1 top -->
+        <path d="M 728,192 H 1032 Q 1040,192 1040,200 V 264" fill="none" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#ov-arrow)"/>
+        <!-- k Cron -> R2 -->
+        <line x1="728" y1="520" x2="912" y2="520" stroke="#5e5e5b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#ov-arrow)"/>
+        <rect x="92" y="234" width="44" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="114" y="243" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">MUTATE</text>
+        <rect x="224" y="234" width="64" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="256" y="243" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">LIVE QUERY</text>
+        <rect x="356" y="164" width="48" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="380" y="173" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">SIGN IN</text>
+        <rect x="338" y="264" width="84" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="380" y="273" fill="#3e6c00" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">PUSH MUTATIONS</text>
+        <rect x="344" y="316" width="72" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="380" y="325" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">PULL CHANGES</text>
+        <rect x="356" y="388" width="48" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="380" y="397" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">API KEY</text>
+        <rect x="608" y="234" width="72" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="644" y="243" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">CHECK COOKIE</text>
+        <rect x="792" y="276" width="56" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="820" y="285" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">CAS BATCH</text>
+        <rect x="782" y="388" width="76" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="820" y="397" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">SAME MUTATORS</text>
+        <rect x="786" y="172" width="68" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="820" y="181" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">AUTH TABLES</text>
+        <rect x="784" y="500" width="72" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="820" y="509" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">DAILY EXPORT</text>
+        <!-- Node: PWA UI -->
+        <rect x="72" y="152" width="216" height="64" rx="6" fill="#f5f5f3"/>
+        <rect x="72" y="152" width="216" height="64" rx="6" fill="rgba(94,94,91,0.10)" stroke="#6a6a65" stroke-width="1"/>
+        <rect x="80" y="160" width="28" height="12" rx="2" fill="transparent" stroke="rgba(106,106,101,0.40)" stroke-width="0.8"/>
+        <text x="94" y="169" fill="#6a6a65" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">APP</text>
+        <text x="180" y="188" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">PWA UI</text>
+        <text x="180" y="204" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">React 19 · TanStack Router</text>
+        <!-- Node: sync-client + Dexie -->
+        <rect x="72" y="264" width="216" height="64" rx="6" fill="#f5f5f3"/>
+        <rect x="72" y="264" width="216" height="64" rx="6" fill="rgba(17,17,17,0.05)" stroke="#5e5e5b" stroke-width="1"/>
+        <rect x="80" y="272" width="32" height="12" rx="2" fill="transparent" stroke="rgba(94,94,91,0.50)" stroke-width="0.8"/>
+        <text x="96" y="281" fill="#5e5e5b" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">SYNC</text>
+        <text x="180" y="300" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">sync-client + Dexie</text>
+        <text x="180" y="316" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">local DB · outbox · loop</text>
+        <!-- Node: Kyujin -->
+        <rect x="72" y="376" width="216" height="64" rx="6" fill="#f5f5f3"/>
+        <rect x="72" y="376" width="216" height="64" rx="6" fill="rgba(17,17,17,0.03)" stroke="rgba(17,17,17,0.3)" stroke-width="1"/>
+        <rect x="80" y="384" width="28" height="12" rx="2" fill="transparent" stroke="rgba(17,17,17,0.22)" stroke-width="0.8"/>
+        <text x="94" y="393" fill="#6a6a65" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">BOT</text>
+        <text x="180" y="412" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">Kyujin</text>
+        <text x="180" y="428" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">LLM bot · Bearer API key</text>
+        <!-- Node: Better Auth -->
+        <rect x="472" y="152" width="256" height="64" rx="6" fill="#f5f5f3"/>
+        <rect x="472" y="152" width="256" height="64" rx="6" fill="#ffffff" stroke="#111111" stroke-width="1"/>
+        <rect x="480" y="160" width="32" height="12" rx="2" fill="transparent" stroke="rgba(17,17,17,0.4)" stroke-width="0.8"/>
+        <text x="496" y="169" fill="#111111" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">AUTH</text>
+        <text x="600" y="188" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">Better Auth</text>
+        <text x="600" y="204" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">/api/auth/* · passkey · code</text>
+        <!-- Node: Sync API -->
+        <rect x="472" y="264" width="256" height="64" rx="6" fill="#f5f5f3"/>
+        <rect x="472" y="264" width="256" height="64" rx="6" fill="rgba(62,108,0,0.08)" stroke="#3e6c00" stroke-width="1"/>
+        <rect x="480" y="272" width="28" height="12" rx="2" fill="transparent" stroke="rgba(62,108,0,0.50)" stroke-width="0.8"/>
+        <text x="494" y="281" fill="#3e6c00" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+        <text x="600" y="300" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">Sync API</text>
+        <text x="600" y="316" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">POST /sync/push · GET /sync/pull</text>
+        <!-- Node: Bot API -->
+        <rect x="472" y="376" width="256" height="64" rx="6" fill="#f5f5f3"/>
+        <rect x="472" y="376" width="256" height="64" rx="6" fill="#ffffff" stroke="#111111" stroke-width="1"/>
+        <rect x="480" y="384" width="28" height="12" rx="2" fill="transparent" stroke="rgba(17,17,17,0.4)" stroke-width="0.8"/>
+        <text x="494" y="393" fill="#111111" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+        <text x="600" y="412" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">Bot API</text>
+        <text x="600" y="428" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">/bot/v1/* · OpenAPI 3.1</text>
+        <!-- Node: Export cron -->
+        <rect x="472" y="488" width="256" height="64" rx="6" fill="#f5f5f3"/>
+        <rect x="472" y="488" width="256" height="64" rx="6" fill="rgba(17,17,17,0.02)" stroke="rgba(17,17,17,0.2)" stroke-width="1" stroke-dasharray="4,3"/>
+        <rect x="480" y="496" width="32" height="12" rx="2" fill="transparent" stroke="rgba(17,17,17,0.2)" stroke-width="0.8"/>
+        <text x="496" y="505" fill="#6a6a65" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">CRON</text>
+        <text x="600" y="524" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">Export cron</text>
+        <text x="600" y="540" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">0 20 * * * UTC · resumable</text>
+        <!-- Node: D1 · food-log -->
+        <rect x="912" y="264" width="256" height="64" rx="6" fill="#f5f5f3"/>
+        <rect x="912" y="264" width="256" height="64" rx="6" fill="rgba(17,17,17,0.05)" stroke="#5e5e5b" stroke-width="1"/>
+        <rect x="920" y="272" width="28" height="12" rx="2" fill="transparent" stroke="rgba(94,94,91,0.50)" stroke-width="0.8"/>
+        <text x="934" y="281" fill="#5e5e5b" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">SQL</text>
+        <text x="1040" y="300" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">D1 · food-log</text>
+        <text x="1040" y="316" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">SQLite · STRICT · version cursor</text>
+        <!-- Node: R2 · exports -->
+        <rect x="912" y="488" width="256" height="64" rx="6" fill="#f5f5f3"/>
+        <rect x="912" y="488" width="256" height="64" rx="6" fill="rgba(17,17,17,0.05)" stroke="#5e5e5b" stroke-width="1"/>
+        <rect x="920" y="496" width="28" height="12" rx="2" fill="transparent" stroke="rgba(94,94,91,0.50)" stroke-width="0.8"/>
+        <text x="934" y="505" fill="#5e5e5b" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">OBJ</text>
+        <text x="1040" y="524" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">R2 · exports</text>
+        <text x="1040" y="540" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">exports/YYYY-MM-DD/ · _ok.json</text>
+        <text x="704" y="76" fill="#111111" font-size="14" font-style="italic" font-family="'Instrument Serif', 'Noto Serif', 'Noto Serif TC', serif" text-anchor="end">packages/core：同一份 mutators，手機先算、Worker 定案</text>
+        <path d="M 712,72 Q 744,76 744,116" fill="none" stroke="rgba(17,17,17,0.4)" stroke-width="1" stroke-dasharray="4,3"/>
+        <circle cx="744" cy="120" r="2" fill="#111111"/>
+        <text x="1240" y="100" fill="#111111" font-size="14" font-style="italic" font-family="'Instrument Serif', 'Noto Serif', 'Noto Serif TC', serif" text-anchor="end">一次 push = 一個 D1 原子 batch</text>
+        <path d="M 1200,108 Q 1200,200 1156,260" fill="none" stroke="rgba(17,17,17,0.4)" stroke-width="1" stroke-dasharray="4,3"/>
+        <circle cx="1152" cy="264" r="2" fill="#111111"/>
+        <!-- Legend strip -->
+        <line x1="40" y1="608" x2="1240" y2="608" stroke="rgba(17,17,17,0.1)" stroke-width="0.8"/>
+        <text x="40" y="624" fill="#5e5e5b" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.18em">LEGEND</text>
+        <rect x="40" y="636" width="14" height="10" rx="2" fill="rgba(62,108,0,0.08)" stroke="#3e6c00" stroke-width="1"/>
+        <text x="60" y="644" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Focal · sync path</text>
+        <rect x="190" y="636" width="14" height="10" rx="2" fill="#ffffff" stroke="#111111" stroke-width="1"/>
+        <text x="210" y="644" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Worker route</text>
+        <rect x="340" y="636" width="14" height="10" rx="2" fill="rgba(17,17,17,0.05)" stroke="#5e5e5b" stroke-width="1"/>
+        <text x="360" y="644" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Data store</text>
+        <rect x="490" y="636" width="14" height="10" rx="2" fill="rgba(94,94,91,0.10)" stroke="#6a6a65" stroke-width="1"/>
+        <text x="510" y="644" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">User surface</text>
+        <rect x="640" y="636" width="14" height="10" rx="2" fill="rgba(17,17,17,0.03)" stroke="rgba(17,17,17,0.3)" stroke-width="1"/>
+        <text x="660" y="644" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">External client</text>
+        <rect x="790" y="636" width="14" height="10" rx="2" fill="rgba(17,17,17,0.02)" stroke="rgba(17,17,17,0.2)" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="810" y="644" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Scheduled</text>
+        <line x1="940" y1="642" x2="968" y2="642" stroke="#3e6c00" stroke-width="1.4" marker-end="url(#ov-arrow-accent)"/>
+        <text x="976" y="644" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Primary flow</text>
+        <line x1="1090" y1="642" x2="1118" y2="642" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#ov-arrow-link)"/>
+        <text x="1126" y="644" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">HTTPS · auth</text>
+      </svg>
+    </div>
+    <div class="cols">
+      <div class="card"><h3><span class="dot coral"></span>iPhone PWA（apps/food-log）</h3>
+        <ul><li>React 19 + TanStack Router（<code>#today</code> 等 hash 網址）</li><li>資料一律讀本機 Dexie，不等網路</li><li>sync-client 負責送出、拉回、合併</li><li>Service Worker 快取整個 App，可離線開啟</li></ul></div>
+      <div class="card"><h3><span class="dot ink"></span>Cloudflare Worker（workers/api）</h3>
+        <ul><li>Hono 路由：<code>/api/auth/*</code>、<code>/sync/*</code>、<code>/bot/v1/*</code></li><li>Better Auth：passkey、一次性登入碼、session</li><li>部署時也一起提供前端靜態檔（同一個網址）</li></ul></div>
+      <div class="card"><h3><span class="dot muted"></span>Storage</h3>
+        <ul><li>D1（SQLite）：你的飲食資料 + 同步記帳 + 登入資料</li><li>R2：每天 04:00 台北時間的完整匯出</li></ul></div>
+    </div>
+  </section>
+
+  <section id="frontend">
+    <p class="eyebrow">2 · Frontend</p>
+    <h2>前端 PWA：從手指到磁碟的六層</h2>
+    <p class="lead">上層只管畫面與「使用者想做什麼」；中間的 sync-client 把每個動作變成本機寫入 + 待送佇列；最底下是手機的 IndexedDB。</p>
+    <div class="diagram-container">
+      <svg viewBox="0 0 1280 528" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="v2-frontend-title v2-frontend-desc" style="min-width:1280px">
+        <title id="v2-frontend-title">food-log v2 frontend layers</title>
+        <desc id="v2-frontend-desc">Layer stack of the PWA from features down to IndexedDB: features call actions, actions turn each user action into a named mutation, sync-client applies it locally with the shared core mutators and syncs in the background.</desc>
+        <defs>
+          <marker id="fe-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5e5e5b"/></marker>
+          <marker id="fe-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#3e6c00"/></marker>
+          <marker id="fe-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f3"/>
+        <text x="40" y="84" fill="#5e5e5b" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.18em">TAP</text>
+        <line x1="52" y1="96" x2="52" y2="440" stroke="#5e5e5b" stroke-width="1" marker-end="url(#fe-arrow)"/>
+        <text x="40" y="468" fill="#5e5e5b" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.18em">DISK</text>
+        <rect x="120" y="72" width="1040" height="64" fill="#f5f5f3"/>
+        <text x="140" y="108" fill="#5e5e5b" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">L6</text>
+        <text x="200" y="110" fill="#111111" font-size="16" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Features</text>
+        <text x="1140" y="110" fill="#5e5e5b" font-size="10" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="end" letter-spacing="0.04em">today · trends · items · stores · search · weight · settings</text>
+        <rect x="120" y="136" width="1040" height="64" fill="#ededea"/>
+        <line x1="120" y1="136" x2="1160" y2="136" stroke="rgba(17,17,17,0.12)" stroke-width="1"/>
+        <text x="140" y="172" fill="#5e5e5b" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">L5</text>
+        <text x="200" y="174" fill="#111111" font-size="16" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">App shell</text>
+        <text x="1140" y="174" fill="#5e5e5b" font-size="10" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="end" letter-spacing="0.04em">Root boot · hash router · DataProvider snapshot · UpdatePrompt</text>
+        <rect x="120" y="200" width="1040" height="64" fill="#f5f5f3"/>
+        <line x1="120" y1="200" x2="1160" y2="200" stroke="rgba(17,17,17,0.12)" stroke-width="1"/>
+        <text x="140" y="236" fill="#5e5e5b" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">L4</text>
+        <text x="200" y="238" fill="#111111" font-size="16" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">actions.ts</text>
+        <text x="1140" y="238" fill="#5e5e5b" font-size="10" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="end" letter-spacing="0.04em">one user action = one named mutation · undo = inverse mutation</text>
+        <rect x="120" y="264" width="1040" height="64" fill="rgba(62,108,0,0.08)"/>
+        <rect x="120" y="264" width="1040" height="64" fill="none" stroke="#3e6c00" stroke-width="1"/>
+        <text x="140" y="300" fill="#3e6c00" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em" font-weight="600">L3</text>
+        <text x="200" y="302" fill="#111111" font-size="16" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">sync-client</text>
+        <text x="1140" y="302" fill="#3e6c00" font-size="10" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="end" letter-spacing="0.04em">mutate · loop 2/5/15 s · push ≤10 · pull 1,000 rows · rebase</text>
+        <rect x="120" y="328" width="1040" height="64" fill="#f5f5f3"/>
+        <line x1="120" y1="328" x2="1160" y2="328" stroke="rgba(17,17,17,0.12)" stroke-width="1"/>
+        <text x="140" y="364" fill="#5e5e5b" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">L2</text>
+        <text x="200" y="366" fill="#111111" font-size="16" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">packages/core</text>
+        <text x="1140" y="366" fill="#5e5e5b" font-size="10" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="end" letter-spacing="0.04em">mutators · zod schema · nutrition · trends (shared with Worker)</text>
+        <rect x="120" y="392" width="1040" height="64" fill="#ededea"/>
+        <line x1="120" y1="392" x2="1160" y2="392" stroke="rgba(17,17,17,0.12)" stroke-width="1"/>
+        <text x="140" y="428" fill="#5e5e5b" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">L1</text>
+        <text x="200" y="430" fill="#111111" font-size="16" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Dexie · IndexedDB</text>
+        <text x="1140" y="430" fill="#5e5e5b" font-size="10" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="end" letter-spacing="0.04em">food-log-&lt;userId&gt; · srv_* · view · pending · failed · meta</text>
+        <rect x="120" y="72" width="1040" height="384" fill="none" stroke="#5e5e5b" stroke-width="1"/>
+        <text x="120" y="500" fill="#5e5e5b" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.18em">FOCAL LAYER</text>
+        <text x="232" y="500" fill="#5e5e5b" font-size="12" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" font-style="italic">sync-client 讓畫面只讀本機資料：點下去就寫進 Dexie，網路的事全交給它在背景處理。</text>
+      </svg>
+    </div>
+    <div class="cols two">
+      <div class="card"><h3><span class="dot ink"></span>打開 App（Root boot）</h3>
+        <ol class="steps"><li>這支手機選過「先在這支手機試用」→ 試用模式：開 <code>food-log-local</code> 資料庫，不連 Worker。</li><li>否則用一個很小的 <code>fetch('/api/auth/get-session')</code> 問有沒有登入（登入套件改成要用時才載入）。</li><li>有 session → 打開 <code>food-log-&lt;userId&gt;</code>，開始同步。</li><li>連不上伺服器、但這支手機登入過 → 直接用本機資料打開（離線照常記）。</li><li>確定沒登入 → 登入畫面（passkey／登入碼）。</li><li>之後同步收到 401 → 蓋一層登入畫面，待送資料保留，登入完繼續送。</li></ol></div>
+      <div class="card"><h3><span class="dot coral"></span>記一筆（例：點一個品項）</h3>
+        <ol class="steps"><li>畫面呼叫 <code>actions.recordLog()</code>：算好份量與營養素。</li><li>變成一個有名字的 mutation：<code>logs.add@1</code>（若同時補填營養素，品項也包在同一個 mutation）。</li><li>sync-client 在一個 Dexie 交易裡用 core 的同一份規則執行：檢查、寫畫面表、放進 <code>pending</code>。</li><li>畫面的 live query 立刻看到新列（不等網路）；違反規則（例如店名重複）當場報錯。</li><li>回傳 undo：一律是反向 mutation（<code>logs.delete</code>），不去刪佇列。</li></ol></div>
+    </div>
+  </section>
+
+  <section id="auth">
+    <p class="eyebrow">3 · Sign-in &amp; session</p>
+    <h2>登入驗證：登入碼開門、passkey 常用、cookie 走天下</h2>
+    <p class="lead">沒有註冊頁（<code>disableSignUp</code>），帳號由你在電腦上建立；只有 <code>ALLOWED_EMAILS</code> 裡的人能登入。第一次用登入碼，進來後註冊 passkey，之後都用 Face ID。</p>
+    <div class="diagram-container">
+      <svg viewBox="0 0 1280 792" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="v2-auth-title v2-auth-desc" style="min-width:1280px">
+        <title id="v2-auth-title">food-log v2 sign-in and session</title>
+        <desc id="v2-auth-desc">Sequence: Brian creates a one-time login code on his Mac, the PWA redeems it with Better Auth for a session cookie and registers a passkey; later logins use the passkey with Face ID; every sync request carries the cookie, which the Sync API checks with Better Auth before answering 200 or 401.</desc>
+        <defs>
+          <marker id="au-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5e5e5b"/></marker>
+          <marker id="au-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#3e6c00"/></marker>
+          <marker id="au-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f3"/>
+        <rect x="360" y="152" width="560" height="400" rx="4" fill="rgba(17,17,17,0.02)" stroke="rgba(17,17,17,0.22)" stroke-width="1"/>
+        <rect x="360" y="152" width="40" height="16" rx="2" fill="#f5f5f3" stroke="rgba(17,17,17,0.22)" stroke-width="1"/>
+        <text x="380" y="164" fill="#5e5e5b" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.12em">ALT</text>
+        <text x="372" y="184" fill="#5e5e5b" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.04em">[first login · one-time code]</text>
+        <text x="372" y="384" fill="#5e5e5b" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.04em">[every later login · passkey]</text>
+        <line x1="368" y1="360" x2="912" y2="360" stroke="rgba(17,17,17,0.2)" stroke-width="1" stroke-dasharray="4,3"/>
+        <line x1="128" y1="88" x2="128" y2="704" stroke="rgba(17,17,17,0.2)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="384" y1="88" x2="384" y2="704" stroke="rgba(17,17,17,0.2)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="640" y1="88" x2="640" y2="704" stroke="rgba(17,17,17,0.2)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="896" y1="88" x2="896" y2="704" stroke="rgba(17,17,17,0.2)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="1152" y1="88" x2="1152" y2="704" stroke="rgba(17,17,17,0.2)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="128" y1="128" x2="894" y2="128" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#au-arrow)"/>
+        <line x1="384" y1="216" x2="638" y2="216" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#au-arrow-link)"/>
+        <line x1="640" y1="256" x2="894" y2="256" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#au-arrow)"/>
+        <line x1="640" y1="296" x2="386" y2="296" stroke="#3e6c00" stroke-width="1.4" stroke-dasharray="5,4" marker-end="url(#au-arrow-accent)"/>
+        <line x1="384" y1="336" x2="638" y2="336" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#au-arrow-link)"/>
+        <line x1="384" y1="416" x2="638" y2="416" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#au-arrow-link)"/>
+        <path d="M 384,440 H 424 Q 432,440 432,448 V 456 Q 432,464 424,464 H 386" fill="none" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#au-arrow)"/>
+        <line x1="384" y1="496" x2="638" y2="496" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#au-arrow-link)"/>
+        <line x1="640" y1="528" x2="386" y2="528" stroke="#5e5e5b" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#au-arrow)"/>
+        <line x1="384" y1="600" x2="1150" y2="600" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#au-arrow-link)"/>
+        <line x1="1152" y1="640" x2="642" y2="640" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#au-arrow)"/>
+        <line x1="1152" y1="680" x2="386" y2="680" stroke="#5e5e5b" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#au-arrow)"/>
+        <rect x="470" y="108" width="84" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="512" y="117" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">SAVE CODE HASH</text>
+        <rect x="478" y="196" width="68" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="512" y="205" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">REDEEM CODE</text>
+        <rect x="732" y="236" width="72" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="768" y="245" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">CONSUME CODE</text>
+        <rect x="470" y="276" width="84" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="512" y="285" fill="#3e6c00" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">SESSION COOKIE</text>
+        <rect x="478" y="316" width="68" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="512" y="325" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">ADD PASSKEY</text>
+        <rect x="474" y="396" width="76" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="512" y="405" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">GET CHALLENGE</text>
+        <rect x="440" y="446" width="48" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="464" y="455" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">FACE ID</text>
+        <rect x="470" y="476" width="84" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="512" y="485" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">VERIFY PASSKEY</text>
+        <rect x="470" y="508" width="84" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="512" y="517" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">SESSION COOKIE</text>
+        <rect x="730" y="580" width="76" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="768" y="589" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">PUSH + COOKIE</text>
+        <rect x="986" y="620" width="76" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="1024" y="629" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">CHECK SESSION</text>
+        <rect x="988" y="660" width="72" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="1024" y="669" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">200 · OR 401</text>
+        <!-- Node: Brian's Mac -->
+        <rect x="32" y="40" width="192" height="48" rx="6" fill="#f5f5f3"/>
+        <rect x="32" y="40" width="192" height="48" rx="6" fill="rgba(94,94,91,0.10)" stroke="#6a6a65" stroke-width="1"/>
+        <rect x="40" y="48" width="28" height="12" rx="2" fill="transparent" stroke="rgba(106,106,101,0.40)" stroke-width="0.8"/>
+        <text x="54" y="57" fill="#6a6a65" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">CLI</text>
+        <text x="128" y="68" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">Brian's Mac</text>
+        <text x="128" y="84" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">scripts/login-code.ts</text>
+        <!-- Node: iPhone PWA -->
+        <rect x="288" y="40" width="192" height="48" rx="6" fill="#f5f5f3"/>
+        <rect x="288" y="40" width="192" height="48" rx="6" fill="rgba(94,94,91,0.10)" stroke="#6a6a65" stroke-width="1"/>
+        <rect x="296" y="48" width="28" height="12" rx="2" fill="transparent" stroke="rgba(106,106,101,0.40)" stroke-width="0.8"/>
+        <text x="310" y="57" fill="#6a6a65" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">APP</text>
+        <text x="384" y="68" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">iPhone PWA</text>
+        <text x="384" y="84" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">LoginScreen · authClient</text>
+        <!-- Node: Better Auth -->
+        <rect x="544" y="40" width="192" height="48" rx="6" fill="#f5f5f3"/>
+        <rect x="544" y="40" width="192" height="48" rx="6" fill="#ffffff" stroke="#111111" stroke-width="1"/>
+        <rect x="552" y="48" width="32" height="12" rx="2" fill="transparent" stroke="rgba(17,17,17,0.4)" stroke-width="0.8"/>
+        <text x="568" y="57" fill="#111111" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">AUTH</text>
+        <text x="640" y="68" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">Better Auth</text>
+        <text x="640" y="84" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">/api/auth/*</text>
+        <!-- Node: D1 auth tables -->
+        <rect x="800" y="40" width="192" height="48" rx="6" fill="#f5f5f3"/>
+        <rect x="800" y="40" width="192" height="48" rx="6" fill="rgba(17,17,17,0.05)" stroke="#5e5e5b" stroke-width="1"/>
+        <rect x="808" y="48" width="28" height="12" rx="2" fill="transparent" stroke="rgba(94,94,91,0.50)" stroke-width="0.8"/>
+        <text x="822" y="57" fill="#5e5e5b" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">SQL</text>
+        <text x="896" y="68" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">D1 auth tables</text>
+        <text x="896" y="84" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">session · passkey · codes</text>
+        <!-- Node: Sync API -->
+        <rect x="1056" y="40" width="192" height="48" rx="6" fill="#f5f5f3"/>
+        <rect x="1056" y="40" width="192" height="48" rx="6" fill="rgba(62,108,0,0.08)" stroke="#3e6c00" stroke-width="1"/>
+        <rect x="1064" y="48" width="28" height="12" rx="2" fill="transparent" stroke="rgba(62,108,0,0.50)" stroke-width="0.8"/>
+        <text x="1078" y="57" fill="#3e6c00" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+        <text x="1152" y="68" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">Sync API</text>
+        <text x="1152" y="84" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">/sync/push · /sync/pull</text>
+        <!-- Legend strip -->
+        <line x1="40" y1="736" x2="1240" y2="736" stroke="rgba(17,17,17,0.1)" stroke-width="0.8"/>
+        <text x="40" y="752" fill="#5e5e5b" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.18em">LEGEND</text>
+        <line x1="40" y1="770" x2="68" y2="770" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#au-arrow-link)"/>
+        <text x="76" y="772" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">HTTPS from the phone</text>
+        <line x1="220" y1="770" x2="248" y2="770" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#au-arrow)"/>
+        <text x="256" y="772" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Internal call</text>
+        <line x1="400" y1="770" x2="428" y2="770" stroke="#5e5e5b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#au-arrow)"/>
+        <text x="436" y="772" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Response</text>
+        <line x1="580" y1="770" x2="608" y2="770" stroke="#3e6c00" stroke-width="1.4" stroke-dasharray="4,3" marker-end="url(#au-arrow-accent)"/>
+        <text x="616" y="772" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Session granted</text>
+      </svg>
+    </div>
+    <div class="cols">
+      <div class="card"><h3><span class="dot ink"></span>第一次登入</h3>
+        <ol class="steps"><li>你在 Mac 跑 <code>bootstrap-owner.ts</code> 建立帳號（一次）。</li><li>跑 <code>login-code.ts</code>：產生 <code>XXXX-XXXX-XXXX</code>，D1 只存 SHA-256 hash，15 分鐘、只能用一次。</li><li>手機輸入登入碼 → <code>/api/auth/login-code/redeem</code> → 核銷並檢查允許清單 → 發 session cookie。</li><li>登入狀態下「新增 passkey」：Face ID 建立，綁定網域 <code>food-log.brian-konr.workers.dev</code>。</li></ol></div>
+      <div class="card"><h3><span class="dot coral"></span>之後每一次</h3>
+        <ol class="steps"><li>passkey 登入：拿 challenge → Face ID 簽名 → Better Auth 驗證 → cookie。</li><li>Cookie：<code>HttpOnly; Secure; SameSite=Lax</code>，90 天、使用中自動延長。</li><li>每個 <code>/sync/*</code> 請求帶 cookie；Worker 先看 5 分鐘的簽章快取，過期才查 D1。</li><li>沒有有效 session → 401 → App 蓋登入畫面，資料不丟。</li></ol></div>
+      <div class="card"><h3><span class="dot link"></span>Kyujin（bot）</h3>
+        <ol class="steps"><li><code>bot-key.ts</code> 發一把 <code>flk_…</code> API key，D1 只存 hash。</li><li>請求帶 <code>Authorization: Bearer</code>；每次都重新確認 key 的擁有者仍在允許清單。</li><li>權限只有 <code>foodlog:read</code> 與 <code>foodlog:write.kyujin</code>：只能改自己記的東西。</li></ol></div>
+    </div>
+  </section>
+
+  <section id="sync">
+    <p class="eyebrow">4 · Sync</p>
+    <h2>同步：一次循環 = push 再 pull</h2>
+    <p class="lead">核心保證：每個動作在伺服器剛好生效一次（重送也一樣），而且每支手機最後看到的都和伺服器一致。觸發時機：打開 App、回到前景、恢復網路、每次記錄後、前景時每 60 秒。</p>
+    <div class="diagram-container">
+      <svg viewBox="0 0 1280 744" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="v2-sync-title v2-sync-desc" style="min-width:1280px">
+        <title id="v2-sync-title">food-log v2 one sync cycle</title>
+        <desc id="v2-sync-desc">Sequence of one sync cycle: the UI mutates Dexie and sees the change instantly; the sync-client loop pushes up to ten pending mutations to the Sync API, which runs each mutator and commits it to D1 as one compare-and-swap batch, then pulls rows newer than its cookie and rebases the local view.</desc>
+        <defs>
+          <marker id="sy-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5e5e5b"/></marker>
+          <marker id="sy-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#3e6c00"/></marker>
+          <marker id="sy-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f3"/>
+        <rect x="872" y="272" width="304" height="124" rx="4" fill="rgba(17,17,17,0.02)" stroke="rgba(17,17,17,0.22)" stroke-width="1"/>
+        <rect x="872" y="272" width="40" height="16" rx="2" fill="#f5f5f3" stroke="rgba(17,17,17,0.22)" stroke-width="1"/>
+        <text x="892" y="284" fill="#5e5e5b" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.12em">LOOP</text>
+        <text x="884" y="304" fill="#5e5e5b" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.04em">[each mutation]</text>
+        <line x1="128" y1="88" x2="128" y2="656" stroke="rgba(17,17,17,0.2)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="384" y1="88" x2="384" y2="656" stroke="rgba(17,17,17,0.2)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="640" y1="88" x2="640" y2="656" stroke="rgba(17,17,17,0.2)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="896" y1="88" x2="896" y2="656" stroke="rgba(17,17,17,0.2)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="1152" y1="88" x2="1152" y2="656" stroke="rgba(17,17,17,0.2)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="128" y1="128" x2="382" y2="128" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#sy-arrow)"/>
+        <line x1="384" y1="168" x2="130" y2="168" stroke="#5e5e5b" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sy-arrow)"/>
+        <line x1="640" y1="208" x2="386" y2="208" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#sy-arrow)"/>
+        <line x1="640" y1="248" x2="894" y2="248" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#sy-arrow-link)"/>
+        <path d="M 896,320 H 936 Q 944,320 944,328 V 336 Q 944,344 936,344 H 898" fill="none" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#sy-arrow)"/>
+        <line x1="896" y1="376" x2="1150" y2="376" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#sy-arrow)"/>
+        <line x1="896" y1="432" x2="642" y2="432" stroke="#5e5e5b" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sy-arrow)"/>
+        <line x1="640" y1="472" x2="894" y2="472" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#sy-arrow-link)"/>
+        <line x1="896" y1="512" x2="1150" y2="512" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#sy-arrow)"/>
+        <line x1="896" y1="552" x2="642" y2="552" stroke="#3e6c00" stroke-width="1.4" stroke-dasharray="5,4" marker-end="url(#sy-arrow-accent)"/>
+        <line x1="640" y1="592" x2="386" y2="592" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#sy-arrow)"/>
+        <line x1="384" y1="632" x2="130" y2="632" stroke="#5e5e5b" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sy-arrow)"/>
+        <rect x="234" y="108" width="44" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="256" y="117" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">MUTATE</text>
+        <rect x="224" y="148" width="64" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="256" y="157" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">LIVE QUERY</text>
+        <rect x="476" y="188" width="72" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="512" y="197" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">READ PENDING</text>
+        <rect x="742" y="228" width="52" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="768" y="237" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">PUSH ≤10</text>
+        <rect x="952" y="326" width="68" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="986" y="335" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">RUN MUTATOR</text>
+        <rect x="996" y="356" width="56" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="1024" y="365" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">CAS BATCH</text>
+        <rect x="744" y="412" width="48" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="768" y="421" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">RESULTS</text>
+        <rect x="726" y="452" width="84" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="768" y="461" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">PULL BY COOKIE</text>
+        <rect x="982" y="492" width="84" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="1024" y="501" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">ROWS &gt; VERSION</text>
+        <rect x="726" y="532" width="84" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="768" y="541" fill="#3e6c00" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">CHANGES · PAGE</text>
+        <rect x="490" y="572" width="44" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="512" y="581" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">REBASE</text>
+        <rect x="230" y="612" width="52" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="256" y="621" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">NEW VIEW</text>
+        <!-- Node: PWA UI -->
+        <rect x="32" y="40" width="192" height="48" rx="6" fill="#f5f5f3"/>
+        <rect x="32" y="40" width="192" height="48" rx="6" fill="rgba(94,94,91,0.10)" stroke="#6a6a65" stroke-width="1"/>
+        <rect x="40" y="48" width="28" height="12" rx="2" fill="transparent" stroke="rgba(106,106,101,0.40)" stroke-width="0.8"/>
+        <text x="54" y="57" fill="#6a6a65" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">APP</text>
+        <text x="128" y="68" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">PWA UI</text>
+        <text x="128" y="84" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">features · actions.ts</text>
+        <!-- Node: Dexie -->
+        <rect x="288" y="40" width="192" height="48" rx="6" fill="#f5f5f3"/>
+        <rect x="288" y="40" width="192" height="48" rx="6" fill="rgba(17,17,17,0.05)" stroke="#5e5e5b" stroke-width="1"/>
+        <rect x="296" y="48" width="28" height="12" rx="2" fill="transparent" stroke="rgba(94,94,91,0.50)" stroke-width="0.8"/>
+        <text x="310" y="57" fill="#5e5e5b" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">IDB</text>
+        <text x="384" y="68" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">Dexie</text>
+        <text x="384" y="84" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">view · srv_* · pending</text>
+        <!-- Node: sync-client -->
+        <rect x="544" y="40" width="192" height="48" rx="6" fill="#f5f5f3"/>
+        <rect x="544" y="40" width="192" height="48" rx="6" fill="#ffffff" stroke="#111111" stroke-width="1"/>
+        <rect x="552" y="48" width="32" height="12" rx="2" fill="transparent" stroke="rgba(17,17,17,0.4)" stroke-width="0.8"/>
+        <text x="568" y="57" fill="#111111" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">LOOP</text>
+        <text x="640" y="68" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">sync-client</text>
+        <text x="640" y="84" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">push · pull · rebase</text>
+        <!-- Node: Sync API -->
+        <rect x="800" y="40" width="192" height="48" rx="6" fill="#f5f5f3"/>
+        <rect x="800" y="40" width="192" height="48" rx="6" fill="rgba(62,108,0,0.08)" stroke="#3e6c00" stroke-width="1"/>
+        <rect x="808" y="48" width="28" height="12" rx="2" fill="transparent" stroke="rgba(62,108,0,0.50)" stroke-width="0.8"/>
+        <text x="822" y="57" fill="#3e6c00" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+        <text x="896" y="68" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">Sync API</text>
+        <text x="896" y="84" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">core mutators on D1</text>
+        <!-- Node: D1 -->
+        <rect x="1056" y="40" width="192" height="48" rx="6" fill="#f5f5f3"/>
+        <rect x="1056" y="40" width="192" height="48" rx="6" fill="rgba(17,17,17,0.05)" stroke="#5e5e5b" stroke-width="1"/>
+        <rect x="1064" y="48" width="28" height="12" rx="2" fill="transparent" stroke="rgba(94,94,91,0.50)" stroke-width="0.8"/>
+        <text x="1078" y="57" fill="#5e5e5b" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">SQL</text>
+        <text x="1152" y="68" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">D1</text>
+        <text x="1152" y="84" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">meta.version · rows</text>
+        <!-- Legend strip -->
+        <line x1="40" y1="688" x2="1240" y2="688" stroke="rgba(17,17,17,0.1)" stroke-width="0.8"/>
+        <text x="40" y="704" fill="#5e5e5b" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.18em">LEGEND</text>
+        <line x1="40" y1="722" x2="68" y2="722" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#sy-arrow-link)"/>
+        <text x="76" y="724" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">HTTPS to the Worker</text>
+        <line x1="220" y1="722" x2="248" y2="722" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#sy-arrow)"/>
+        <text x="256" y="724" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Local / internal call</text>
+        <line x1="400" y1="722" x2="428" y2="722" stroke="#5e5e5b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#sy-arrow)"/>
+        <text x="436" y="724" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Response</text>
+        <line x1="580" y1="722" x2="608" y2="722" stroke="#3e6c00" stroke-width="1.4" stroke-dasharray="4,3" marker-end="url(#sy-arrow-accent)"/>
+        <text x="616" y="724" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Server truth arrives</text>
+      </svg>
+    </div>
+    <div class="cols">
+      <div class="card"><h3><span class="dot link"></span>Push（送出）</h3>
+        <ol class="steps"><li>從 <code>pending</code> 取最多 10 筆，<code>POST /sync/push</code>，帶 clientId 與 <code>X-FoodLog-Client</code> 版本。</li><li>伺服器對每筆：mutationId 已處理過 → 直接回當時存下的結果（所以重送不會重複）。</li><li>否則讀資料 → 跑同一份 mutator → 用一個原子 batch 寫入：版本號比對（CAS）、版本 +1、資料列、這支手機的游標。</li><li>版本號被別人搶先 → 重試（最多 5 次）；業務錯誤 → 記下結果並推進游標。</li></ol></div>
+      <div class="card"><h3><span class="dot coral"></span>Pull + Rebase（拉回、合併）</h3>
+        <ol class="steps"><li><code>GET /sync/pull?cookie=&lt;epoch&gt;:&lt;version&gt;</code>：拿版本號比 cookie 新的列，每頁 1,000 列。</li><li>epoch 不同（例如從備份還原過）→ <code>reset:true</code>，整份重抓。</li><li>收到的列寫進 <code>srv_*</code>；已確認的 pending 移除，失敗的移到 <code>failed</code>。</li><li>畫面表 = 伺服器狀態 + 重播還沒確認的 pending（不變式，有 property test 守）。</li></ol></div>
+      <div class="card"><h3><span class="dot muted"></span>出錯時</h3>
+        <ol class="steps"><li>斷網或 5xx：等 2、5、15 秒各重試一次，之後等下一個觸發時機。</li><li>401：停下、蓋登入畫面，pending 保留。</li><li>409 <code>client_too_old</code>：顯示「有新版本，請重新載入」。</li><li>業務錯誤：進設定頁的失敗清單，可以重試或捨棄。</li></ol></div>
+    </div>
+  </section>
+
+  <section id="data">
+    <p class="eyebrow">5 · Data</p>
+    <h2>資料：兩個資料庫，各有分工</h2>
+    <p class="lead">手機上的 Dexie 是「伺服器確認過的副本 + 還沒送出的動作」；D1 是唯一正本。所有業務表都以 <code>(user_id, id)</code> 為主鍵、STRICT 型別、軟刪除（<code>deleted_at</code>），每列帶 <code>version</code> 讓 pull 知道從哪裡接著拿。</p>
+    <div class="diagram-container">
+      <svg viewBox="0 0 1280 608" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="v2-data-title v2-data-desc" style="min-width:1280px">
+        <title id="v2-data-title">food-log v2 where data lives</title>
+        <desc id="v2-data-desc">Data layout: on the phone Dexie keeps a server copy, the screen tables, an outbox of pending mutations and sync metadata; in D1 the business tables, sync bookkeeping and Better Auth tables live together; pushes write the business tables, pulls copy rows back, and a daily cron exports D1 to R2.</desc>
+        <defs>
+          <marker id="da-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5e5e5b"/></marker>
+          <marker id="da-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#3e6c00"/></marker>
+          <marker id="da-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f3"/>
+        <rect x="40" y="80" width="440" height="440" rx="8" fill="rgba(17,17,17,0.02)" stroke="rgba(17,17,17,0.1)" stroke-width="0.8"/>
+        <rect x="194" y="84" width="132" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="260" y="93" fill="#6a6a65" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.14em">IPHONE · INDEXEDDB (DEXIE)</text>
+        <rect x="760" y="80" width="480" height="336" rx="8" fill="rgba(17,17,17,0.02)" stroke="rgba(17,17,17,0.1)" stroke-width="0.8"/>
+        <rect x="938" y="84" width="124" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="1000" y="93" fill="#6a6a65" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.14em">CLOUDFLARE D1 · food-log</text>
+        <!-- a D1 business -> srv_* (pull) -->
+        <line x1="792" y1="132" x2="450" y2="132" stroke="#5e5e5b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#da-arrow)"/>
+        <!-- b outbox -> business tables (push) -->
+        <path d="M 448,344 H 692 Q 700,344 700,336 V 164 Q 700,156 708,156 H 790" fill="none" stroke="#3e6c00" stroke-width="1.4" marker-end="url(#da-arrow-accent)"/>
+        <!-- c srv_* -> view -->
+        <line x1="200" y1="176" x2="200" y2="214" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#da-arrow)"/>
+        <!-- d outbox -> view -->
+        <line x1="320" y1="320" x2="320" y2="282" stroke="#5e5e5b" stroke-width="1.2" marker-end="url(#da-arrow)"/>
+        <!-- e meta <-> sync bookkeeping -->
+        <path d="M 448,456 H 712 Q 720,456 720,448 V 256 Q 720,248 728,248 H 790" fill="none" stroke="#5e5e5b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#da-arrow)"/>
+        <!-- f D1 -> R2 -->
+        <line x1="1000" y1="416" x2="1000" y2="446" stroke="#5e5e5b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#da-arrow)"/>
+        <rect x="592" y="112" width="56" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="620" y="121" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">PULL ROWS</text>
+        <rect x="660" y="236" width="32" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="676" y="245" fill="#3e6c00" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">PUSH</text>
+        <rect x="208" y="189" width="44" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="230" y="198" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">REBASE</text>
+        <rect x="328" y="295" width="44" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="350" y="304" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">REPLAY</text>
+        <rect x="546" y="436" width="76" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="584" y="445" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">EPOCH:VERSION</text>
+        <rect x="1008" y="425" width="72" height="12" rx="2" fill="#f5f5f3"/>
+        <text x="1044" y="434" fill="#6a6a65" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">DAILY EXPORT</text>
+        <!-- Node: srv_* · server copy -->
+        <rect x="72" y="112" width="376" height="64" rx="6" fill="#f5f5f3"/>
+        <rect x="72" y="112" width="376" height="64" rx="6" fill="rgba(17,17,17,0.05)" stroke="#5e5e5b" stroke-width="1"/>
+        <rect x="80" y="120" width="28" height="12" rx="2" fill="transparent" stroke="rgba(94,94,91,0.50)" stroke-width="0.8"/>
+        <text x="94" y="129" fill="#5e5e5b" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">SRV</text>
+        <text x="260" y="148" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">srv_* · server copy</text>
+        <text x="260" y="164" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">last state the server confirmed (+ tombstones)</text>
+        <!-- Node: Screen tables -->
+        <rect x="72" y="216" width="376" height="64" rx="6" fill="#f5f5f3"/>
+        <rect x="72" y="216" width="376" height="64" rx="6" fill="rgba(94,94,91,0.10)" stroke="#6a6a65" stroke-width="1"/>
+        <rect x="80" y="224" width="32" height="12" rx="2" fill="transparent" stroke="rgba(106,106,101,0.40)" stroke-width="0.8"/>
+        <text x="96" y="233" fill="#6a6a65" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">VIEW</text>
+        <text x="260" y="252" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">Screen tables</text>
+        <text x="260" y="268" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">stores · items · logs · weights · favorites · config</text>
+        <!-- Node: Outbox -->
+        <rect x="72" y="320" width="376" height="64" rx="6" fill="#f5f5f3"/>
+        <rect x="72" y="320" width="376" height="64" rx="6" fill="rgba(17,17,17,0.05)" stroke="#5e5e5b" stroke-width="1"/>
+        <rect x="80" y="328" width="28" height="12" rx="2" fill="transparent" stroke="rgba(94,94,91,0.50)" stroke-width="0.8"/>
+        <text x="94" y="337" fill="#5e5e5b" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">OUT</text>
+        <text x="260" y="356" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">Outbox</text>
+        <text x="260" y="372" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">pending (mutationId, touched[]) · failed</text>
+        <!-- Node: Sync meta -->
+        <rect x="72" y="424" width="376" height="64" rx="6" fill="#f5f5f3"/>
+        <rect x="72" y="424" width="376" height="64" rx="6" fill="rgba(17,17,17,0.05)" stroke="#5e5e5b" stroke-width="1"/>
+        <rect x="80" y="432" width="32" height="12" rx="2" fill="transparent" stroke="rgba(94,94,91,0.50)" stroke-width="0.8"/>
+        <text x="96" y="441" fill="#5e5e5b" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">META</text>
+        <text x="260" y="460" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">Sync meta</text>
+        <text x="260" y="476" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">clientId · cookie · lastMutationId</text>
+        <!-- Node: Business tables -->
+        <rect x="792" y="112" width="416" height="64" rx="6" fill="#f5f5f3"/>
+        <rect x="792" y="112" width="416" height="64" rx="6" fill="rgba(62,108,0,0.08)" stroke="#3e6c00" stroke-width="1"/>
+        <rect x="800" y="120" width="32" height="12" rx="2" fill="transparent" stroke="rgba(62,108,0,0.50)" stroke-width="0.8"/>
+        <text x="816" y="129" fill="#3e6c00" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">DATA</text>
+        <text x="1000" y="148" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">Business tables</text>
+        <text x="1000" y="164" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">stores items logs weights favorites config</text>
+        <!-- Node: Sync bookkeeping -->
+        <rect x="792" y="216" width="416" height="64" rx="6" fill="#f5f5f3"/>
+        <rect x="792" y="216" width="416" height="64" rx="6" fill="rgba(17,17,17,0.05)" stroke="#5e5e5b" stroke-width="1"/>
+        <rect x="800" y="224" width="32" height="12" rx="2" fill="transparent" stroke="rgba(94,94,91,0.50)" stroke-width="0.8"/>
+        <text x="816" y="233" fill="#5e5e5b" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">SYNC</text>
+        <text x="1000" y="252" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">Sync bookkeeping</text>
+        <text x="1000" y="268" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">meta(version, epoch) · cas_guard · sync_clients · outcomes</text>
+        <!-- Node: Better Auth tables -->
+        <rect x="792" y="320" width="416" height="64" rx="6" fill="#f5f5f3"/>
+        <rect x="792" y="320" width="416" height="64" rx="6" fill="rgba(17,17,17,0.05)" stroke="#5e5e5b" stroke-width="1"/>
+        <rect x="800" y="328" width="32" height="12" rx="2" fill="transparent" stroke="rgba(94,94,91,0.50)" stroke-width="0.8"/>
+        <text x="816" y="337" fill="#5e5e5b" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">AUTH</text>
+        <text x="1000" y="356" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">Better Auth tables</text>
+        <text x="1000" y="372" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">user · session · passkey · apikey · login_codes</text>
+        <!-- Node: R2 · daily export -->
+        <rect x="792" y="448" width="416" height="64" rx="6" fill="#f5f5f3"/>
+        <rect x="792" y="448" width="416" height="64" rx="6" fill="rgba(17,17,17,0.03)" stroke="rgba(17,17,17,0.3)" stroke-width="1"/>
+        <rect x="800" y="456" width="28" height="12" rx="2" fill="transparent" stroke="rgba(17,17,17,0.22)" stroke-width="0.8"/>
+        <text x="814" y="465" fill="#6a6a65" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">R2</text>
+        <text x="1000" y="484" fill="#111111" font-size="12" font-weight="600" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif" text-anchor="middle">R2 · daily export</text>
+        <text x="1000" y="500" fill="#5e5e5b" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">exports/YYYY-MM-DD/*.json · logs.csv · _ok.json</text>
+        <!-- Legend strip -->
+        <line x1="40" y1="552" x2="1240" y2="552" stroke="rgba(17,17,17,0.1)" stroke-width="0.8"/>
+        <text x="40" y="568" fill="#5e5e5b" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.18em">LEGEND</text>
+        <rect x="40" y="580" width="14" height="10" rx="2" fill="rgba(62,108,0,0.08)" stroke="#3e6c00" stroke-width="1"/>
+        <text x="60" y="588" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Focal · your food data</text>
+        <rect x="220" y="580" width="14" height="10" rx="2" fill="rgba(17,17,17,0.05)" stroke="#5e5e5b" stroke-width="1"/>
+        <text x="240" y="588" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Table group</text>
+        <rect x="400" y="580" width="14" height="10" rx="2" fill="rgba(94,94,91,0.10)" stroke="#6a6a65" stroke-width="1"/>
+        <text x="420" y="588" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">What the UI reads</text>
+        <rect x="580" y="580" width="14" height="10" rx="2" fill="rgba(17,17,17,0.03)" stroke="rgba(17,17,17,0.3)" stroke-width="1"/>
+        <text x="600" y="588" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Backup object store</text>
+        <line x1="760" y1="586" x2="788" y2="586" stroke="#3e6c00" stroke-width="1.4" marker-end="url(#da-arrow-accent)"/>
+        <text x="796" y="588" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Writes go up</text>
+        <line x1="940" y1="586" x2="968" y2="586" stroke="#5e5e5b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#da-arrow)"/>
+        <text x="976" y="588" fill="#5e5e5b" font-size="8.5" font-family="'Geist', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif">Data comes back</text>
+      </svg>
+    </div>
+    <div class="cols">
+      <div class="card"><h3><span class="dot coral"></span>D1 · 三組表</h3>
+        <ul><li><b>Business</b>：stores、items、logs、weights、favorites、config（你的資料）。</li><li><b>Sync</b>：<code>meta</code>（目前版本號與 epoch）、<code>cas_guard</code>、<code>sync_clients</code>（每支手機處理到哪）、<code>mutation_outcomes</code>（每筆的結果，供重送查詢）。</li><li><b>Auth</b>：Better Auth 的 user、session、account、passkey、apikey、verification，加上 login_codes。</li></ul></div>
+      <div class="card"><h3><span class="dot muted"></span>每日備份</h3>
+        <ol class="steps"><li>Cron 每天 20:00 UTC（台北 04:00）開始，分段匯出每張表成 JSON + <code>logs.csv</code>。</li><li>做不完由每 5 分鐘的第二個 cron 接著做（免費方案每次 CPU 很短）。</li><li>全部寫完才寫 <code>_ok.json</code>；匯出期間資料有變 → <code>consistent:false</code>。</li><li><code>restore-drill</code> 在本機還原比對；D1 遺失時可產生 SQL 寫回，並換新 epoch。</li></ol></div>
+      <div class="card"><h3><span class="dot ink"></span>從舊系統搬過來</h3>
+        <ol class="steps"><li><code>fetch-sheet</code> 唯讀抓整份 Google Sheet。</li><li><code>transform</code> 修正不合規則的列，全部記在 anomalies。</li><li><code>emit-sql --reset</code> → 套用 → <code>verify</code> 逐表比對。</li><li>回滾用 <code>reverse-export</code> 把切換後的新資料寫回 Sheet。</li></ol></div>
+    </div>
+  </section>
+
+  <section id="routes">
+    <p class="eyebrow">6 · Worker routes</p>
+    <h2>Worker 路由表</h2>
+    <p class="lead">一個 Worker、一個網址。下面是它對外的每一個入口。</p>
+    <div class="table-wrap"><table>
+      <tr><th>入口</th><th>誰在用</th><th>驗證方式</th><th>做什麼</th></tr>
+      <tr><td><code>/api/auth/*</code></td><td>PWA</td><td>—（這裡就是登入）</td><td>passkey 登入／註冊、登入碼兌換、登出、取得 session</td></tr>
+      <tr><td><code>POST /sync/push</code></td><td>PWA</td><td>session cookie</td><td>送最多 10 個 mutation，回每筆結果</td></tr>
+      <tr><td><code>GET /sync/pull</code></td><td>PWA</td><td>session cookie</td><td>依 cookie 回新變更（每頁 1,000 列）與本機的錯誤</td></tr>
+      <tr><td><code>/bot/v1/*</code></td><td>Kyujin</td><td>Bearer API key</td><td>read、summary、trends、history、mutate（7 種動作）、openapi.json</td></tr>
+      <tr><td><code>/telemetry</code></td><td>PWA</td><td>限流</td><td>只收錯誤碼與版本，1 KB 上限</td></tr>
+      <tr><td><code>/api/health</code></td><td>你</td><td>—</td><td>健康檢查，含 <code>authPrewarm</code> 狀態</td></tr>
+      <tr><td>cron <code>0 20 * * *</code>、<code>*/5 20 * * *</code></td><td>Cloudflare</td><td>—</td><td>每日匯出到 R2（可續跑）</td></tr>
+      <tr><td>其他路徑</td><td>瀏覽器</td><td>—</td><td>前端靜態檔（<code>deploy:with-app</code> 時），SPA fallback</td></tr>
+    </table></div>
+  </section>
+
+  <p class="footer">food-log v2 · diagram-design (food-log profile) · source: v2 branch — workers/api, packages/core, packages/sync-client, apps/food-log</p>
+</div>
+</body>
+</html>
