@@ -5,6 +5,8 @@ Brian 用這個手機 PWA 記飲食與體重：今天還剩多少熱量／蛋白
 線上版：https://brian-konr.github.io/food-log/
 
 > 給 coding agent：請先讀 [`AGENTS.md`](AGENTS.md)。
+>
+> **v2 分支注意**：本檔隨 `app/` 搬到 `apps/food-log/`。指令改用 `npx -y pnpm@10`（pnpm 沒有全域安裝），`gas/` 在 `../../legacy/gas/`，`../docs/` 在 `../../docs/`。**v2 分支沒有部署腳本與 `deploy/gas-url`**：下面標明「部署」的段落是 v1 說明，只能在 `main` 照做（`main` 的 `app/scripts/deploy-*.sh`、`app/deploy/gas-url`）。
 
 ## 架構
 
@@ -13,7 +15,7 @@ Brian 用這個手機 PWA 記飲食與體重：今天還剩多少熱量／蛋白
 - **前端**：靜態 PWA（Vite、React、TypeScript、Tailwind v4、shadcn/ui、`vite-plugin-pwa`），放在 GitHub Pages，來源是本 repo 的 `gh-pages` 分支。
 - **後端**：Brian 的 Google 帳號底下，一個綁定在 Google Sheet 上的 Apps Script，部署成網頁應用程式（網址結尾是 `/exec`）。
 - **資料**：存在那份 Google Sheet。沒有照片、沒有 Drive。
-- **保護**：`/exec` 網址是公開的（之後會放在 `deploy/gas-url`），每個請求都必須帶「共享密鑰」。密鑰只存在 Apps Script 的指令碼屬性和手機的瀏覽器裡，不進 repo，也不進 build 產物。
+- **保護**：`/exec` 網址是公開的（在 `main` 放在 `app/deploy/gas-url`），每個請求都必須帶「共享密鑰」。密鑰只存在 Apps Script 的指令碼屬性和手機的瀏覽器裡，不進 repo，也不進 build 產物。
 
 手機送出的紀錄會先存在 IndexedDB 待送佇列，送成功才移除，所以離線或 Google 很慢時也不會遺失。有快照就先畫快照並顯示「同步中」；沒有快照就畫灰條，不要出現預設的 2,000 kcal。
 
@@ -24,15 +26,16 @@ src/            前端（App.tsx 是唯一有狀態的容器；screens/、compon
 src/api/        資料層：待送佇列（index.ts）、Apps Script 介面卡（gas.ts）、本機試用介面卡（mock.ts）
 src/data/       Sheet 列轉換（codec.ts）、預設 Config、品項快照合併、搜尋、連線狀態、IndexedDB（kv.ts）、快照（cache.ts）、載入狀態（loadstate.ts）
 src/lib/        台北日界線、營養換算、趨勢、文案格式
-gas/            Apps Script 後端：Code.gs、Schema.gs、Setup.gs、Trends.gs
-                appsscript.json、FoodLog-AppsScript.gs（四個合併成一檔，方便貼上）
-test/           Vitest 單元測試（含用假的 Apps Script 環境跑 gas/ 的程式）
-scripts/        部署、合併 .gs、同步設計 token、建品項快照
+test/           Vitest 單元測試（前端）
+scripts/        同步設計 token、建品項快照（v1 的部署腳本只在 main）
 public/         catalog-v1.json（示意快照）、icons/
-deploy/         gas-url（目前的 /exec 網址；第一次部署後才放）
-../docs/spec/   技術規格
-../docs/design/ 設計系統 DESIGN.md、tokens.css、原型
-../docs/kyujin-api.md  Kyujin 範例請求
+../../legacy/gas/   Apps Script 後端：Code.gs、Schema.gs、Setup.gs、Trends.gs
+                    appsscript.json、FoodLog-AppsScript.gs（四個合併成一檔，方便貼上）
+../../legacy/test/  用假的 Apps Script 環境跑 gas/ 的測試（含 GAS 對照測試）
+../../legacy/scripts/build-gas.mjs  產生合併檔
+../../docs/spec/    技術規格
+../../docs/design/  設計系統 DESIGN.md、tokens.css、原型
+../../docs/kyujin-api.md  Kyujin 範例請求
 ```
 
 ## 本機開發
@@ -40,36 +43,35 @@ deploy/         gas-url（目前的 /exec 網址；第一次部署後才放）
 需要 Node.js 20.19 以上（Vite 8 的要求）。
 
 ```bash
-npm ci
-npm run dev        # http://localhost:5173
+# 在 repo 根目錄
+npx -y pnpm@10 install
+npx -y pnpm@10 --filter @food-log/app dev   # http://localhost:5173
 ```
 
-沒有設定 `VITE_GAS_URL`、也還沒在畫面上貼網址時，App 以「本機試用」模式執行：資料只存在這個瀏覽器，畫面會標「本機試用」，起始是空的飲食與體重（只有預設目標），沒有編造的紀錄。想連真的後端，就用 `VITE_GAS_URL="$(cat deploy/gas-url)" npm run dev`，第一次開啟時輸入共享密鑰（要向 Brian 拿）。注意這樣寫入的是真實資料。
+沒有設定 `VITE_GAS_URL`、也還沒在畫面上貼網址時，App 以「本機試用」模式執行：資料只存在這個瀏覽器，畫面會標「本機試用」，起始是空的飲食與體重（只有預設目標），沒有編造的紀錄。想連真的後端，就設定 `VITE_GAS_URL`（網址在 `main` 的 `app/deploy/gas-url`，v2 分支沒有這個檔）再跑 dev，第一次開啟時輸入共享密鑰（要向 Brian 拿）。注意這樣寫入的是真實資料。
 
-`public/catalog-v1.json` 目前是 **4 筆示意**（`version` 為 `"fixture"`），讓本機搜尋看得到東西。正式檔由 `npm run build:catalog` 覆蓋，正式 `version` 為 `"2026-10-10"`。不要把示意檔當成完整目錄。
+`public/catalog-v1.json` 目前是 **4 筆示意**（`version` 為 `"fixture"`），讓本機搜尋看得到東西。正式檔由 `build:catalog`（`npx -y pnpm@10 --filter @food-log/app build:catalog`）覆蓋，正式 `version` 為 `"2026-10-10"`。不要把示意檔當成完整目錄。
 
-設計 token 的來源是 repo 的 `docs/design/tokens.css`；`npm run dev` 和 `npm run build` 之前會自動複製到 `src/styles/`。
+設計 token 的來源是 repo 的 `docs/design/tokens.css`；`dev` 和 `build` 之前會自動複製到 `src/styles/`。
 
 ## 測試與建置
 
 ```bash
-npm test           # 單元測試：日界線、營養、趨勢、搜尋、目錄、待送佇列、Apps Script 後端、密鑰掃描
-npm run build      # 型別檢查＋產出 dist/
-npm run build:gas  # 改過 gas/*.gs 後重新產生 gas/FoodLog-AppsScript.gs（測試會檢查兩邊一致）
-npm run e2e        # 真實點擊（WebKit）。會自己開 dev server；瀏覽器沿用 PLAYWRIGHT_DIR，不下載
-npm run deploy     # 前端 gh-pages（./scripts/deploy-gh-pages.sh）
-npm run deploy:gas # 在 app/ build:gas，複製到 clasp/src/Code.js，clasp push 再 update-deployment
+# 在 repo 根目錄
+npx -y pnpm@10 -r test                              # 單元測試：日界線、營養、趨勢、搜尋、目錄、待送佇列、Apps Script 後端（legacy）、密鑰掃描
+npx -y pnpm@10 -r typecheck
+npx -y pnpm@10 --filter @food-log/app build         # 型別檢查＋產出 dist/
+npx -y pnpm@10 --filter @food-log/legacy build:gas  # 改過 legacy/gas/*.gs 後重新產生 legacy/gas/FoodLog-AppsScript.gs（測試會檢查兩邊一致）
+npx -y pnpm@10 --filter @food-log/app e2e           # 真實點擊（WebKit）。會自己開 dev server；瀏覽器沿用 PLAYWRIGHT_DIR，不下載
 ```
 
-`npm run build` **不會**抓全家／7-11 目錄，也不打網路。`npm run deploy` 與 `npm run deploy:gas` 這次實作不要執行。
+v1 的 `deploy`（gh-pages）與 `deploy:gas` 只存在於 `main`，v2 分支沒有；這次實作不要執行。
 
-## 部署前端
+`build` **不會**抓全家／7-11 目錄，也不打網路。
 
-```bash
-npm run deploy
-```
+## 部署前端（v1，只能在 `main`）
 
-這次實作**不要執行**。腳本會跑測試，讀 `deploy/gas-url` 當作 `VITE_GAS_URL`，用 `BASE=/food-log/` 建置，檢查產物裡沒有密鑰，再把 `dist/` 強制推到 `gh-pages` 分支。遠端頁面是 https://brian-konr.github.io/food-log/ 。
+在 `main` 的 `app/` 執行 `npm run deploy`。這次實作**不要執行**，v2 分支也沒有這支腳本。`main` 的腳本會跑測試，讀 `deploy/gas-url` 當作 `VITE_GAS_URL`，用 `BASE=/food-log/` 建置，檢查產物裡沒有密鑰，再把 `dist/` 強制推到 `gh-pages` 分支。遠端頁面是 https://brian-konr.github.io/food-log/ 。
 
 Kyujin 提醒連結是 `https://brian-konr.github.io/food-log/#weight`。
 
@@ -80,9 +82,9 @@ Kyujin 提醒連結是 `https://brian-konr.github.io/food-log/#weight`。
 ### 第一次建立
 
 1. ⛔ 用 Brian 的帳號新建一個 Google Sheet，開「擴充功能 → Apps Script」。
-2. 把 `gas/FoodLog-AppsScript.gs` 的內容全部貼進 `程式碼.gs`（或分別貼 `Schema.gs`、`Setup.gs`、`Code.gs`、`Trends.gs`）。在「專案設定」勾選「在編輯器中顯示 appsscript.json」，把 `gas/appsscript.json` 貼進去。授權範圍只有 `spreadsheets.currentonly`，不要加 Drive。
+2. 把 `legacy/gas/FoodLog-AppsScript.gs` 的內容全部貼進 `程式碼.gs`（或分別貼 `Schema.gs`、`Setup.gs`、`Code.gs`、`Trends.gs`）。在「專案設定」勾選「在編輯器中顯示 appsscript.json」，把 `legacy/gas/appsscript.json` 貼進去。授權範圍只有 `spreadsheets.currentonly`，不要加 Drive。
 3. ⛔ 選 `setupFoodLog` 執行，第一次會要求授權試算表。完成後在執行紀錄看共享密鑰，用聊天私下傳給自己和 Kazuha。不要把密鑰貼進 repo、issue 或公開地方。
-4. ⛔「部署 → 新增部署作業 → 網頁應用程式」，執行身分選「我」，存取權選「任何人」。把結尾是 `/exec` 的網址寫進 `deploy/gas-url`，再部署前端。
+4. ⛔「部署 → 新增部署作業 → 網頁應用程式」，執行身分選「我」，存取權選「任何人」。把結尾是 `/exec` 的網址寫進 `main` 的 `app/deploy/gas-url`，再部署前端。
 5. GitHub Pages 用 `gh-pages` 分支，網站路徑 `/food-log/`。
 
 `setupFoodLog` 可以重複執行：只補缺少的分頁、欄位和 Config key，不會清資料，也不會覆蓋已存在的設定。不要寫入示範飲食或示範體重。
@@ -91,11 +93,11 @@ Kyujin 提醒連結是 `https://brian-konr.github.io/food-log/#weight`。
 
 這次（v1.1）改了分頁、欄位、action、權限。只部署前端時，舊 `/exec` 沒有 `upsertStore`，也沒有新欄。Brian 或 Kazuha 按這個順序：
 
-1. 開發機改 `app/gas/*.gs`，跑 `npm run build:gas` 與 `npm test`。合併檔是 `app/gas/FoodLog-AppsScript.gs`（不要手改）。
-2. ⛔ 貼上編輯器，或在 app/ 跑 `npm run deploy:gas`。腳本會 `build:gas`，把 `gas/FoodLog-AppsScript.gs` 複製成 repo 根目錄 `clasp/src/Code.js`（保留 `clasp/src/appsscript.json`），先把 `clasp/src` 備份成 `clasp/src-bak-時間戳`，再用 `/home/box/.local/bin/clasp` 在 `clasp/` push，並對 `clasp deployments` 裡非 `@HEAD` 的正式部署做 `update-deployment`。不要改 `app/deploy/gas-url`。
+1. 開發機改 `gas/*.gs`（v2 分支在 `legacy/gas/`），跑 `build:gas` 與測試。合併檔是 `FoodLog-AppsScript.gs`（不要手改）。
+2. ⛔ 貼上編輯器，或在 `main` 的 `app/` 跑 `npm run deploy:gas`（v2 分支沒有這支腳本）。腳本會 `build:gas`，把 `FoodLog-AppsScript.gs` 複製成 repo 根目錄 `clasp/src/Code.js`（保留 `clasp/src/appsscript.json`），先把 `clasp/src` 備份成 `clasp/src-bak-時間戳`，再用 `/home/box/.local/bin/clasp` 在 `clasp/` push，並對 `clasp deployments` 裡非 `@HEAD` 的正式部署做 `update-deployment`。不要改 `app/deploy/gas-url`。
 3. ⛔ 在編輯器選 `migrateFoodLog` 按 Run（可選：後端第一次收到請求也會在 lock 裡自動 migrate，並把 `schema_version` 寫進 Config，之後跳過）。執行紀錄要看到第一次有建立 `Stores`、Items/Logs 補了欄；再跑一次是空陣列。不要跑 `rotateSharedSecret`。`setupFoodLog` 可以再跑，它只補缺的表和 Config，不重生密鑰。
 4. ⛔「部署 → 管理部署作業 → 鉛筆 → 新版本」（`npm run deploy:gas` 已做這步就不用再按）。`/exec` 網址不變，不要改 `app/deploy/gas-url`。
-5. ⛔ 前端用 `npm run deploy`。這次實作不要執行。
+5. ⛔ 前端在 `main` 用 `npm run deploy`。這次實作不要執行。
 
 前端要容忍舊後端：`read` 沒有 `stores` 時當成 `[]`。`schema_outdated` 只會出現在自動 migrate 仍失敗時；畫面把錯誤代碼顯示出來。
 
@@ -105,7 +107,7 @@ v1.1.3 沒有新欄位，但寫入改成純文字格式，**要重新部署 Apps
 
 授權範圍維持 `spreadsheets.currentonly`。不要加 Drive。
 
-如果改用「新增部署作業」，會得到新的網址，要更新 `deploy/gas-url` 並重新部署前端。
+如果改用「新增部署作業」，會得到新的網址，要更新 `main` 的 `app/deploy/gas-url` 並重新部署前端。
 
 scriptId 留給 Brian 填，不要抄其他專案的 scriptId。
 
@@ -115,7 +117,7 @@ scriptId 留給 Brian 填，不要抄其他專案的 scriptId。
 - 第一次開 App 時貼上 `/exec` 網址和密鑰，存在該手機瀏覽器的 localStorage（`foodlog.gasUrl`、`foodlog.secret`）。
 - 每個請求的 body 都帶著密鑰，後端比對不符就回 `{ ok: false, error: "unauthorized" }`。
 - 換密鑰：⛔ 在 Apps Script 執行 `rotateSharedSecret`，舊密鑰立刻失效，手機要到設定頁重新輸入。
-- Kyujin 也用同一組密鑰，請求時加 `"client": "kyujin"`。範例見 [`../docs/kyujin-api.md`](../docs/kyujin-api.md)。
+- Kyujin 也用同一組密鑰，請求時加 `"client": "kyujin"`。範例見 [`../../docs/kyujin-api.md`](../../docs/kyujin-api.md)。
 
 ## Sheet 分頁與欄位
 
@@ -216,12 +218,12 @@ Logs 的 append/update 以及 upsertItem：四項營養素都要是有限數字�
 
 外部客戶端，不是 App 裡的第二個畫面。請求加 `"client": "kyujin"`。可以：`read`、`summary`、`trends`、`history`、`upsertStore`（新建 `created_by:kyujin`，可改 App 店名）、店家品項 `upsertItem`（含 App 建的）、寫／改／刪 `source=kyujin` 的 Logs、寫自己建的沒有店家的 `u:`、`upsertWeight`。不可以：刪／復原店家、動 `app`／`quick` 的 Logs、改沒有店家的 App `u:`、補填 `ov:`、改官方品項、`setConfig`。
 
-範例請求見 [`../docs/kyujin-api.md`](../docs/kyujin-api.md)。`summary` 的 `remaining` 若為負數，表示當天已經超過目標；App 會顯示「超過」，不會顯示負號。
+範例請求見 [`../../docs/kyujin-api.md`](../../docs/kyujin-api.md)。`summary` 的 `remaining` 若為負數，表示當天已經超過目標；App 會顯示「超過」，不會顯示負號。
 
 ## 文件
 
 - [`AGENTS.md`](AGENTS.md)：給 coding agent 的規則
-- [`../docs/spec/v1.md`](../docs/spec/v1.md)、[`../docs/spec/v1.1.md`](../docs/spec/v1.1.md)：技術規格
-- [`../docs/PRD.md`](../docs/PRD.md)：產品需求
-- [`../docs/design/DESIGN.md`](../docs/design/DESIGN.md)：設計系統
-- [`../docs/kyujin-api.md`](../docs/kyujin-api.md)：Kyujin API 範例
+- [`../../docs/spec/v1.md`](../../docs/spec/v1.md)、[`../../docs/spec/v1.1.md`](../../docs/spec/v1.1.md)：技術規格
+- [`../../docs/PRD.md`](../../docs/PRD.md)：產品需求
+- [`../../docs/design/DESIGN.md`](../../docs/design/DESIGN.md)：設計系統
+- [`../../docs/kyujin-api.md`](../../docs/kyujin-api.md)：Kyujin API 範例
