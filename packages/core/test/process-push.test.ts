@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'vitest'
 import { KYUJIN } from '../src/actor'
-import { TransientError } from '../src/errors'
+import { MutationError, TransientError } from '../src/errors'
 import { BOT_MUTATION_NAMES } from '../src/registry'
+import { MAX_PUSH_MUTATIONS, pushRequestSchema } from '../src/protocol/push'
 import type { PushMutation } from '../src/protocol/push'
+import { MUTATION_OUTCOME_RETENTION } from '../src/server/store'
+import { processPush } from '../src/server/process-push'
 import { itemArgs, logArgs, storeArgs, TEST_NOW, weightArgs } from '../src/testing'
 import { newServer, row } from './helpers'
 
@@ -19,9 +22,11 @@ describe('冪等（clientId + mutationId）', () => {
     const rows = JSON.stringify(s.snapshot())
     const second = await s.push(req)
     expect(second.lastMutationId).toBe(2)
+    // 重送回傳當時的原始結果（成功結果存在 mutation_outcomes）。
+    expect(second.results).toEqual(first.results)
     expect(second.results).toEqual([
-      { id: 1, ok: true, result: { replayed: true } },
-      { id: 2, ok: true, result: { replayed: true } },
+      { id: 1, ok: true, result: { rowId: 'w1', overwritten: false, prevKg: null } },
+      { id: 2, ok: true, result: { rowId: 'l1' } },
     ])
     expect(s.db.version).toBe(v)
     expect(JSON.stringify(s.snapshot())).toBe(rows)
@@ -208,5 +213,122 @@ describe('並行與暫時性錯誤（CAS）', () => {
     expect(s.db.version).toBe(1)
     expect([a.results[0]!.ok, b.results[0]!.ok]).toEqual([true, true])
     expect(await s.getLastMutationId('c1')).toBe(1)
+  })
+})
+
+describe('成功結果的保存（mutation_outcomes）', () => {
+  test('遺失回應後重送 weights.upsert 的覆寫：回傳原本的 {overwritten:true, prevKg}，不是 {replayed:true}，也不再寫入', async () => {
+    const s = newServer()
+    await s.push({ clientId: 'c1', mutations: [m(1, 'weights.upsert@1', weightArgs({ id: 'w1', kg: 72 }))] })
+    const req = { clientId: 'c1', mutations: [m(2, 'weights.upsert@1', weightArgs({ id: 'w2', kg: 73.4 }))] }
+    const first = await s.push(req) // 假裝這個回應在路上掉了
+    expect(first.results[0]).toEqual({ id: 2, ok: true, result: { rowId: 'w1', overwritten: true, prevKg: 72 } })
+    const v = s.db.version
+    const replay = await s.push(req)
+    expect(replay.results[0]).toEqual({ id: 2, ok: true, result: { rowId: 'w1', overwritten: true, prevKg: 72 } })
+    expect(replay.lastMutationId).toBe(2)
+    expect(s.db.version).toBe(v)
+    expect(row(s, 'weights', 'w1').kg).toBe(73.4)
+  })
+
+  test('重送 ignored／duplicate 的結果也原樣回傳；業務錯誤照舊', async () => {
+    const s = newServer()
+    const reqs = [
+      m(1, 'logs.add@1', { log: logArgs({ id: 'l1' }) }),
+      m(2, 'logs.add@1', { log: logArgs({ id: 'l1' }) }), // duplicate
+      m(3, 'logs.delete@1', { id: 'nope' }), // ignored:missing
+      m(4, 'logs.restore@1', { id: 'nope' }), // not_found
+    ]
+    const first = await s.push({ clientId: 'c1', mutations: reqs })
+    expect(first.results.map((r) => r.ok)).toEqual([true, true, true, false])
+    const replay = await s.push({ clientId: 'c1', mutations: reqs })
+    expect(replay.results).toEqual(first.results)
+    expect(replay.results[1]).toMatchObject({ result: { duplicate: true } })
+    expect(replay.results[2]).toMatchObject({ result: { ignored: 'missing' } })
+  })
+
+  test('結果只保留最近 MUTATION_OUTCOME_RETENTION 筆：更舊的重送退回 {replayed:true}', async () => {
+    const s = newServer()
+    const total = MUTATION_OUTCOME_RETENTION + 5
+    for (let id = 1; id <= total; id++) {
+      await s.push({ clientId: 'c1', mutations: [m(id, 'logs.delete@1', { id: `x${id}` })] })
+    }
+    expect(s.db.outcomes.size).toBe(MUTATION_OUTCOME_RETENTION)
+    const old = await s.push({ clientId: 'c1', mutations: [m(1, 'logs.delete@1', { id: 'x1' })] })
+    expect(old.results[0]).toEqual({ id: 1, ok: true, result: { replayed: true } })
+    const recent = await s.push({ clientId: 'c1', mutations: [m(total, 'logs.delete@1', { id: `x${total}` })] })
+    expect(recent.results[0]).toEqual({ id: total, ok: true, result: { ignored: 'missing' } })
+  })
+})
+
+describe('批次大小', () => {
+  test('MAX_PUSH_MUTATIONS 是 10（D1 免費方案每次呼叫 50 個查詢，每筆 mutation 約 4 個）；超過 10 筆的請求不合法', () => {
+    expect(MAX_PUSH_MUTATIONS).toBe(10)
+    const mk = (n: number) => ({ clientId: 'c', mutations: Array.from({ length: n }, (_, i) => m(i + 1, 'logs.delete@1', { id: 'x' })) })
+    expect(pushRequestSchema.safeParse(mk(10)).success).toBe(true)
+    expect(pushRequestSchema.safeParse(mk(11)).success).toBe(false)
+  })
+})
+
+describe('commit 的唯一索引違反（guard 通過之後）= 業務錯誤 bad_record，不是暫時性衝突', () => {
+  test('MemoryTx 模擬部分唯一索引：同一天寫兩筆未刪除的體重 → commit 丟 bad_record，什麼都沒寫', async () => {
+    const s = newServer()
+    const stx = await s.store.begin('c1')
+    const base = { ts: '2026-10-11T08:00:00+08:00', kg: 72, deleted_at: null, updated_at: '2026-10-12T12:00:00+08:00' }
+    stx.tx.put('weights', { id: 'a', day: '2026-10-11', ...base })
+    stx.tx.put('weights', { id: 'b', day: '2026-10-11', ...base })
+    await expect(stx.commit({ ok: true, mutationId: 1, result: {} })).rejects.toMatchObject({ code: 'bad_record' })
+    expect(s.db.tables.weights.size).toBe(0)
+    expect(s.db.version).toBe(0)
+    expect(await s.getLastMutationId('c1')).toBe(0)
+  })
+
+  test('processPush 接住 commit 丟的 bad_record：記錄業務錯誤、cursor 前進、版本號不變，不重試', async () => {
+    const s = newServer()
+    const real = s.store
+    let commits = 0
+    // 包一層：第一次 ok 的 commit 丟 bad_record（模擬 D1 的 UNIQUE 違反），其餘照常。
+    const wrapped = {
+      ...real,
+      userId: real.userId,
+      begin: async (clientId: string) => {
+        const stx = await real.begin(clientId)
+        return {
+          tx: stx.tx,
+          version: stx.version,
+          lastMutationId: stx.lastMutationId,
+          hasWrites: () => stx.hasWrites(),
+          commit: async (input: Parameters<typeof stx.commit>[0]) => {
+            commits += 1
+            if (input.ok && commits === 1) throw new MutationError('bad_record', '這天已經有一筆體重（唯一索引）')
+            return stx.commit(input)
+          },
+        }
+      },
+      readMeta: () => real.readMeta(),
+      rowsAfter: (a: number, l: number) => real.rowsAfter(a, l),
+      rowsAtVersion: (v: number) => real.rowsAtVersion(v),
+      getLastMutationId: (c: string) => real.getLastMutationId(c),
+      getMutationOutcome: (c: string, id: number) => real.getMutationOutcome(c, id),
+      listErrors: (c: string, a: number) => real.listErrors(c, a),
+    }
+    const res = await processPush(wrapped, s.ctx(), { clientId: 'c1', mutations: [m(1, 'weights.upsert@1', weightArgs({ id: 'w1' }))] })
+    expect(res.results[0]).toMatchObject({ id: 1, ok: false, error: 'bad_record' })
+    expect(commits).toBe(2) // 一次 ok（丟錯）、一次業務錯誤；沒有第三次
+    expect(res.lastMutationId).toBe(1)
+    expect(s.db.version).toBe(0)
+    expect(s.db.tables.weights.size).toBe(0)
+    expect(s.db.errors).toHaveLength(1)
+  })
+
+  test('commit 的兩個 guard：版本號被別人推進，或同一台裝置的 cursor 被別的請求推進，都回 false', async () => {
+    const s = newServer()
+    const a = await s.store.begin('c1')
+    await s.mutate('weights.upsert@1', weightArgs({ id: 'w9' }), KYUJIN) // 另一台裝置推進了全域版本號
+    expect(await a.commit({ ok: true, mutationId: 1, result: {} })).toBe(false)
+    const b = await s.store.begin('c1')
+    const c = await s.store.begin('c1')
+    expect(await b.commit({ ok: true, mutationId: 1, result: {} })).toBe(true) // 沒有寫入：版本號不動，只有 cursor 推進
+    expect(await c.commit({ ok: true, mutationId: 1, result: {} })).toBe(false) // cursor guard：版本號沒變，但 cursor 變了
   })
 })

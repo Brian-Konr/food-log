@@ -185,3 +185,97 @@ describe('兩台裝置', () => {
     expect(b.changes.stores[0]!.last_eaten_at).toBe(b.changes.logs[0]!.ts) // logs.add 更新了 last_eaten_at
   })
 })
+
+describe('讀取順序：cursor → meta → 列（回應不能宣稱一筆 mutation 已處理、卻沒帶它的列）', () => {
+  // 在 pull 的每一個讀取之後，讓另一個 push 提交（weights.upsert，mutationId=1）。不論插在哪裡，
+  // 只要回應的 lastMutationId 已經 >= 1，就必須帶著那一列；沒帶的話 lastMutationId 必須還是 0。
+  const OPS = ['getLastMutationId', 'listErrors', 'readMeta', 'rowsAfter'] as const
+  test.each(OPS)('push 在 %s 之後提交', async (op) => {
+    const s = newServer()
+    let fired = false
+    s.afterRead = async (o) => {
+      if (o !== op || fired) return
+      fired = true
+      s.afterRead = undefined // push 自己的讀取不要再觸發鉤子
+      await s.push({ clientId: 'c1', mutations: [{ id: 1, name: 'weights.upsert@1', args: weightArgs({ id: 'wp' }), clientTs: 0 }] })
+    }
+    const p = await s.pull({ clientId: 'c1' })
+    expect(fired).toBe(true)
+    const hasRow = p.changes.weights.some((w) => w.id === 'wp')
+    if (p.lastMutationId >= 1) expect(hasRow, '宣稱 mutation 1 已處理，就必須帶它的列').toBe(true)
+    // 新的讀取順序下，cursor 比列先讀：push 在 cursor 之後才提交 → 這一輪還不宣稱它。
+    expect(p.lastMutationId).toBe(0)
+    // 下一次 pull 就會看到它（cookie 沒有跳過那一列）。
+    const next = await s.pull({ clientId: 'c1', cookie: p.cookie })
+    expect(next.lastMutationId).toBe(1)
+    expect(hasRow || next.changes.weights.some((w) => w.id === 'wp')).toBe(true)
+  })
+
+  test('push 在 pull 開始前已提交：同一個回應宣稱它，也帶著列', async () => {
+    const s = newServer()
+    await s.mutate('weights.upsert@1', weightArgs({ id: 'wp' }))
+    const p = await s.pull({ clientId: 'mem-app' })
+    expect(p.lastMutationId).toBe(1)
+    expect(p.changes.weights.map((w) => w.id)).toEqual(['wp'])
+  })
+
+  test('錯誤只回 <= lastMutationId 的（push 在讀 cursor 之後才提交的錯誤，等下一輪）', async () => {
+    const s = newServer()
+    let fired = false
+    s.afterRead = async (o) => {
+      if (o !== 'getLastMutationId' || fired) return
+      fired = true
+      s.afterRead = undefined
+      await s.push({ clientId: 'c1', mutations: [{ id: 1, name: 'logs.restore@1', args: { id: 'nope' }, clientTs: 0 }] }) // not_found
+    }
+    const p = await s.pull({ clientId: 'c1' })
+    expect(p.lastMutationId).toBe(0)
+    expect(p.errors).toEqual([])
+    const next = await s.pull({ clientId: 'c1' })
+    expect(next.lastMutationId).toBe(1)
+    expect(next.errors.map((e) => e.error)).toEqual(['not_found'])
+  })
+})
+
+describe('使用者隔離（ServerStore.forUser）', () => {
+  test('兩個使用者用相同的 id 與 clientId：pull、cursor、重送結果互不可見', async () => {
+    const s = newServer()
+    const mine = { clientId: 'phone', mutations: [{ id: 1, name: 'weights.upsert@1', args: weightArgs({ id: 'w1', kg: 72 }), clientTs: 0 }] }
+    const theirs = { clientId: 'phone', mutations: [{ id: 1, name: 'weights.upsert@1', args: weightArgs({ id: 'w1', kg: 90 }), clientTs: 0 }] }
+    expect((await s.push(mine, undefined, undefined, 'alice')).results[0]).toMatchObject({ ok: true, result: { rowId: 'w1', overwritten: false } })
+    // bob 的 id=1 不是 alice 的重送：cursor 各自計算，同一天也不會「覆寫」alice 的列。
+    expect((await s.push(theirs, undefined, undefined, 'bob')).results[0]).toMatchObject({ ok: true, result: { rowId: 'w1', overwritten: false, prevKg: null } })
+
+    const a = await s.pull({ clientId: 'phone' }, 'alice')
+    const b = await s.pull({ clientId: 'phone' }, 'bob')
+    expect(a.changes.weights.map((w) => [w.user_id, w.id, w.kg])).toEqual([['alice', 'w1', 72]])
+    expect(b.changes.weights.map((w) => [w.user_id, w.id, w.kg])).toEqual([['bob', 'w1', 90]])
+    expect(a.lastMutationId).toBe(1)
+    expect(b.lastMutationId).toBe(1)
+    // 沒有資料的第三個使用者什麼都看不到。
+    const c = await s.pull({ clientId: 'phone' }, 'carol')
+    expect(c.changes.weights).toEqual([])
+    expect(c.lastMutationId).toBe(0)
+  })
+
+  test('bob 的業務錯誤與重送結果不會出現在 alice 的 pull／重送；forUser 回傳的 userId 就是綁定的 userId', async () => {
+    const s = newServer()
+    await s.push({ clientId: 'phone', mutations: [{ id: 1, name: 'logs.restore@1', args: { id: 'nope' }, clientTs: 0 }] }, undefined, undefined, 'bob')
+    expect((await s.pull({ clientId: 'phone' }, 'bob')).errors).toHaveLength(1)
+    expect((await s.pull({ clientId: 'phone' }, 'alice')).errors).toEqual([])
+    expect(await s.forUser('alice').getMutationOutcome('phone', 1)).toBeUndefined()
+    expect(s.forUser('bob').userId).toBe('bob')
+    expect(s.forUser('alice').userId).toBe('alice')
+  })
+
+  test('版本號是全域的、列是各自的：alice 的 cookie 不會因 bob 的寫入多出列', async () => {
+    const s = newServer()
+    await s.mutateAs('alice', 'weights.upsert@1', weightArgs({ id: 'a1' }))
+    const first = await s.pull({ clientId: 'phone' }, 'alice')
+    await s.mutateAs('bob', 'weights.upsert@1', weightArgs({ id: 'b1' }))
+    const next = await s.pull({ clientId: 'phone', cookie: first.cookie }, 'alice')
+    expect(next.changes.weights).toEqual([])
+    expect(s.dbOf('bob').tables.weights.has('b1')).toBe(true)
+    expect(s.dbOf('alice').tables.weights.has('b1')).toBe(false)
+  })
+})

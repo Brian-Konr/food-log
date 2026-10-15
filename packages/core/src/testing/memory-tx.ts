@@ -1,5 +1,6 @@
 // MemoryTx：記憶體版 Tx，給測試和 MemoryServer 用。
 // put 只進緩衝區（和 D1 的 batch 一樣）；寫了之後再讀會直接丟錯，擋住「先寫後讀」的 mutator。
+import { badRecord } from '../errors'
 import { defaultConfigRow } from '../schema/config'
 import { TABLES, rowKey } from '../schema/rows'
 import type { ConfigRow, ItemRow, Row, RowInput, RowMap, StoreRow, Table, WeightRow } from '../schema/rows'
@@ -9,6 +10,10 @@ export type { RowMap }
 
 type Pending = { [T in Table]: { table: T; row: RowInput<T> } }[Table]
 
+/** 全域的 meta：版本號與 epoch。所有使用者共用（和 D1 的 meta 表一樣）。 */
+export type MemoryMeta = { version: number; epoch: string }
+
+/** 一個使用者的資料。版本號與 epoch 是全域的（`meta` 由 MemoryServer 的所有使用者共用）。 */
 export class MemoryDb {
   readonly tables: { [T in Table]: Map<string, Row<T>> } = {
     stores: new Map(),
@@ -18,12 +23,25 @@ export class MemoryDb {
     favorites: new Map(),
     config: new Map(),
   }
-  version = 0
-  epoch = 'e1'
   readonly clients = new Map<string, number>()
   readonly errors: { clientId: string; mutationId: number; name: string; error: string; message: string; details?: Record<string, unknown> | undefined; at: string }[] = []
+  /** mutation_outcomes：成功的結果，key = `<clientId>\u0000<mutationId>`，值是 JSON 文字（和 D1 一樣會序列化）。 */
+  readonly outcomes = new Map<string, string>()
 
-  constructor(readonly userId = 'u1') {}
+  constructor(readonly userId = 'u1', readonly meta: MemoryMeta = { version: 0, epoch: 'e1' }) {}
+
+  get version(): number {
+    return this.meta.version
+  }
+  set version(v: number) {
+    this.meta.version = v
+  }
+  get epoch(): string {
+    return this.meta.epoch
+  }
+  set epoch(v: string) {
+    this.meta.epoch = v
+  }
 
   /** 測試用：直接放一列（不經過 mutator）。version 預設用目前的全域版本號。 */
   seed<T extends Table>(table: T, row: RowInput<T> & { version?: number }): void {
@@ -90,6 +108,31 @@ export class MemoryTx implements Tx {
   /** 緩衝的寫入（測試用）。 */
   writes(): readonly Pending[] {
     return this.pending
+  }
+
+  /**
+   * 模擬 D1 的部分唯一索引：套用寫入之後，每天最多一筆未刪除的體重、每個 name_norm 最多一家未刪除的店。
+   * 違反就丟 MutationError('bad_record')（和契約一致：guard 通過後的唯一索引違反不是並行衝突）。
+   */
+  assertUnique(db: MemoryDb): void {
+    const weights = new Map(db.tables.weights)
+    const stores = new Map(db.tables.stores)
+    for (const p of this.pending) {
+      if (p.table === 'weights') weights.set(p.row.id, p.row as never)
+      if (p.table === 'stores') stores.set(p.row.id, p.row as never)
+    }
+    const days = new Set<string>()
+    for (const w of weights.values()) {
+      if (w.deleted_at !== null) continue
+      if (days.has(w.day)) throw badRecord('這天已經有一筆體重（唯一索引）')
+      days.add(w.day)
+    }
+    const norms = new Set<string>()
+    for (const st of stores.values()) {
+      if (st.deleted_at !== null) continue
+      if (norms.has(st.name_norm)) throw badRecord('店名重複（唯一索引）')
+      norms.add(st.name_norm)
+    }
   }
 
   /** 把緩衝的寫入套進資料庫，每列蓋上 user_id 與這個 version。 */

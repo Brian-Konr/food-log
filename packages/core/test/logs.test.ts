@@ -89,3 +89,10 @@ test('logs.delete 的 owner／Kyujin 差異：owner 刪不存在或已刪除都�
   expectErr(await s.asKyujin('logs.delete@1', { id: 'a' }), 'forbidden') // 已刪除但不是 kyujin 的列，仍然 forbidden
   expect(s.db.version).toBe(v1 + 1)
 })
+
+test('logs.update 的 name 寫入時去頭尾空白（有意的改善：Code.gs 驗證時 trim、寫入時存原字串；見 gas-parity 檔頭的差異清單）', async () => {
+  const s = newServer()
+  await s.mutate('logs.add@1', { log: logArgs({ id: 'a' }) })
+  expectOk(await s.mutate('logs.update@1', { id: 'a', patch: { name: '  新名 　' } }))
+  expect(row(s, 'logs', 'a').name).toBe('新名')
+})
