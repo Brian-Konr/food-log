@@ -7,12 +7,12 @@ beforeEach(resetDb)
 
 const BUSINESS = ['stores', 'items', 'logs', 'weights', 'favorites', 'config'] as const
 const AUTH = ['user', 'session', 'account', 'verification', 'passkey', 'apikey']
-const SYNC = ['meta', 'cas_guard', 'sync_clients', 'mutation_outcomes', 'login_codes']
+const SYNC = ['meta', 'cas_guard', 'sync_clients', 'mutation_outcomes', 'login_codes', 'export_progress']
 
 type Obj = Record<string, unknown>
 const run = (sql: string, ...params: unknown[]) => db().prepare(sql).bind(...params).run()
 
-describe('migration 0001: sqlite_master', () => {
+describe('migrations 0001 + 0002: sqlite_master', () => {
   it('has exactly the expected tables and every one is STRICT', async () => {
     const rs = await db()
       .prepare(`SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%'`)

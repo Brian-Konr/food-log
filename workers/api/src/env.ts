@@ -17,6 +17,8 @@ export interface Env {
    * 'APP_ORIGIN not configured' (fail closed).
    */
   APP_ORIGIN?: string
+  /** var: rows one export cron invocation may process before it leaves the rest to the next resume tick (default 3000) */
+  EXPORT_ROW_BUDGET?: string
   /**
    * Workers Rate Limiting binding (wrangler.jsonc `ratelimits`) for POST /telemetry/error, keyed on the client IP.
    * Optional: when it is absent (tests, older config) the Worker falls back to a per-isolate token bucket.

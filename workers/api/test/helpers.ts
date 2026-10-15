@@ -19,6 +19,7 @@ const RESET_TABLES = [
   'mutation_outcomes',
   'login_codes',
   'cas_guard',
+  'export_progress',
   'passkey',
   'apikey',
   'session',

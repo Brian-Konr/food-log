@@ -11,6 +11,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { stripJsonc } from './_jsonc.ts'
 import { parseArgs } from './_cli.ts'
 
 const API_DIR = path.join(import.meta.dirname, '..')
@@ -23,29 +24,6 @@ export function guard(repoRoot: string): string | null {
     return `refusing: ${V1_CLIENT} still exists, so apps/food-log is the v1 frontend (Apps Script client). Phase 2 must rewire the app to /sync and delete that file before the app can be deployed with the Worker. Use \`pnpm run deploy\` for the API only.`
   }
   return null
-}
-
-/** Strip // and /* *\/ comments from JSONC without touching string contents. */
-export function stripJsonc(src: string): string {
-  let out = ''
-  let i = 0
-  while (i < src.length) {
-    const c = src[i]!
-    if (c === '"') {
-      let j = i + 1
-      while (j < src.length && src[j] !== '"') j += src[j] === '\\' ? 2 : 1
-      out += src.slice(i, j + 1)
-      i = j + 1
-    } else if (c === '/' && src[i + 1] === '/') {
-      while (i < src.length && src[i] !== '\n') i++
-    } else if (c === '/' && src[i + 1] === '*') {
-      i = src.indexOf('*/', i + 2) + 2
-    } else {
-      out += c
-      i++
-    }
-  }
-  return out.replace(/,(\s*[}\]])/g, '$1')
 }
 
 export function withAssets(configText: string): Record<string, unknown> {

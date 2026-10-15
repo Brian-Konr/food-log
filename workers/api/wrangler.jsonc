@@ -34,12 +34,16 @@
   // a per-isolate token bucket (src/routes/telemetry.ts).
   "ratelimits": [{ "name": "TELEMETRY_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }],
 
-  // Daily export at 20:00 UTC = 04:00 Taipei (src/cron/export.ts)
-  "triggers": { "crons": ["0 20 * * *"] },
+  // Daily export (src/cron/export.ts): "0 20 * * *" = 04:00 Taipei starts it; "*/5 20 * * *" = every 5 minutes up to 04:55 Taipei
+  // resumes an unfinished one (progress lives in the D1 table export_progress; the minute-0 tick of the second cron is skipped).
+  // 2 of the free plan's 5 cron triggers.
+  "triggers": { "crons": ["0 20 * * *", "*/5 20 * * *"] },
 
   "vars": {
     // reject push from clients older than this with 409 client_too_old (rollback: set 9999)
     "MIN_CLIENT_VERSION": "1",
+    // rows one export invocation processes before leaving the rest to the next 5-minute resume tick (one chunk = 1000 rows)
+    "EXPORT_ROW_BUDGET": "3000",
     // ⛔ Brian: APP_ORIGIN is MANDATORY once deployed. The Worker answers 500 'APP_ORIGIN not configured' on
     // /api/auth/*, /sync/* and /bot/* without it; only localhost may omit it. It is the passkey origin
     // (the RP ID is its hostname). After the first deploy prints https://food-log.<your-subdomain>.workers.dev,

@@ -10,3 +10,8 @@ declare namespace Cloudflare {
     APP_ORIGIN?: string
   }
 }
+
+declare module '*?raw' {
+  const text: string
+  export default text
+}
