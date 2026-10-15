@@ -1,0 +1,37 @@
+{
+  "name": "@food-log/sync-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "food-log v2 前端同步用戶端：Dexie 本機資料庫、LocalTx、mutate、rebase、push／pull／loop、React hooks（不建置，直接吃原始碼）",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@food-log/core": "workspace:*",
+    "dexie": "4.4.6",
+    "dexie-react-hooks": "4.4.0"
+  },
+  "peerDependencies": {
+    "react": "^19.3.0"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
+    "@types/node": "26.6.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "fake-indexeddb": "6.2.5",
+    "fast-check": "4.10.2",
+    "jsdom": "26.1.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  }
+}
