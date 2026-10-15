@@ -1,6 +1,6 @@
 node_modules/
-app/dist/
-app/screens/
+apps/*/dist/
+apps/food-log/screens/
 *.local
 .env*
 docs/plans/*.log

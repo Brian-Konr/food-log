@@ -1,0 +1,15 @@
+{
+  "name": "food-log-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "description": "food-log v2 monorepo（pnpm workspace）",
+  "packageManager": "pnpm@10.34.7",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm -r build"
+  }
+}

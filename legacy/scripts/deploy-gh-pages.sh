@@ -18,9 +18,9 @@ if [ -n "$VITE_GAS_URL" ] && ! [[ "$VITE_GAS_URL" =~ ^https://script\.google\.co
 fi
 export VITE_GAS_URL BASE="/food-log/"
 echo "[deploy] BASE=$BASE  模式：$([ -n "$VITE_GAS_URL" ] && echo 連線 Apps Script || echo 本機試用)"
-npm test
-npm run build
-npx vitest run test/security.test.ts
+npx -y pnpm@10 --filter @food-log/app test
+npx -y pnpm@10 --filter @food-log/app build
+npx -y pnpm@10 --filter @food-log/app exec vitest run test/security.test.ts
 touch dist/.nojekyll
 SHA="$(git rev-parse --short HEAD)"
 TMP="$(mktemp -d)"

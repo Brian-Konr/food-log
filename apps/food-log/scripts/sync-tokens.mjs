@@ -4,7 +4,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 const here = dirname(fileURLToPath(import.meta.url))
-const src = resolve(here, '../../docs/design/tokens.css')
+const src = resolve(here, '../../../docs/design/tokens.css')
 const dst = resolve(here, '../src/styles/tokens.css')
 if (!existsSync(src)) {
   console.warn('[sync-tokens] 找不到 docs/design/tokens.css，沿用 src/styles/ 裡現有的那份')

@@ -190,7 +190,7 @@ try {
   await pg.getByRole('button', { name: /今天/ }).last().click(); await pg.setViewportSize({ width: 844, height: 390 }); await wait(pg, 500)
   const dockH = await pg.evaluate(() => document.querySelector('.fixed.inset-x-0')?.getBoundingClientRect().height ?? 0)
   if (dockH > 100) fail(`橫向搜尋區太高：${dockH}px`)
-  await pg.screenshot({ path: fileURLToPath(new URL('../../qa-v1/e2e-landscape.png', import.meta.url)) })
+  await pg.screenshot({ path: fileURLToPath(new URL('../../../qa-v1/e2e-landscape.png', import.meta.url)) })
 
   await pg.setViewportSize({ width: 390, height: 844 })
   await pg.getByRole('button', { name: /今天/ }).last().click(); await wait(pg, 400)
