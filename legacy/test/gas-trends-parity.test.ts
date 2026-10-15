@@ -1,10 +1,10 @@
 import { expect, test } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { loadGas } from '../../../legacy/test/gas-fakes'
+import { loadGas } from './gas-fakes'
 import { weekSummary, weightSeries } from '@/lib/trends'
 import { formatKg } from '@/lib/format'
 
-const fixture = JSON.parse(readFileSync(new URL('./fixtures/trends-cases.json', import.meta.url), 'utf8'))
+const fixture = JSON.parse(readFileSync(new URL('../../apps/food-log/test/fixtures/trends-cases.json', import.meta.url), 'utf8'))
 
 test('TS 與 Trends.gs 同一份案例一致', () => {
   const { g } = loadGas()

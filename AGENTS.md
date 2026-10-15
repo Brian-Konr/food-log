@@ -28,7 +28,7 @@ npx -y pnpm@10 --filter @food-log/app build
 - `main` 上 `app/gas/**` 的改動 → 對應到 `legacy/gas/**`（改完要重新產生合併檔 `legacy/gas/FoodLog-AppsScript.gs`：`npx -y pnpm@10 --filter @food-log/legacy build:gas`）。
 - `main` 上 `app/src/**` 的改動 → **手動移植**到 `apps/food-log`；被 v2 重寫的檔案以 v2 為準。
 - 每次合併都在 merge commit message 列出移植清單（哪些 v1 改動移植到哪裡、哪些捨棄）。
-- 共用測試（`defaults`、`trends-parity`、`winter-ui`）留在 `apps/food-log/test/`，路徑指向 `legacy/`；不要刪。
+- GAS 對照測試（`gas-defaults`、`gas-trends-parity`）放在 `legacy/test/`，由 legacy 單向引用前端（`@` → `apps/food-log/src`；黃金案例 `apps/food-log/test/fixtures/trends-cases.json`）。**`apps/food-log` 不得 import `legacy/` 的任何東西**；不要刪這些測試。
 - v1 唯讀開關等 v1 改動做在 `main`，再合併進 `v2`。
 
 ## 紅線
