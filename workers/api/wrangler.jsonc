@@ -14,9 +14,8 @@
     {
       "binding": "DB",
       "database_name": "food-log",
-      // ⛔ Brian: replace with the id printed by `wrangler d1 create food-log` (not a secret).
-      // The placeholder is fine for `wrangler dev --local` and the tests.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // printed by `wrangler d1 create food-log` on 2026-10-16 (APAC; not a secret). Local dev and tests use wrangler.test.jsonc / --local.
+      "database_id": "063b042c-76a4-4e2e-9707-9f869f5080d3",
       "migrations_dir": "migrations"
     }
   ],
