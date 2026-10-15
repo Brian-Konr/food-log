@@ -29,7 +29,30 @@ npx -y pnpm@10 --filter @food-log/api exec wrangler <子指令> …
 
 下文簡寫成 `WR <子指令>`。D1 資料庫叫 `food-log`，R2 bucket 叫 `food-log-exports`（見 `workers/api/wrangler.jsonc`）。wrangler 的旗標會隨版本變，**每個 wrangler 指令都以 `WR <子指令> --help` 為準**。
 
-`tools/migrate` 的各個 CLI（`gas-client`、`fetch-sheet`、`transform`、`emit-sql`、`verify`、`reverse-export`）由階段 3 提供。**這份手冊只寫名稱與計畫裡確定的旗標（`emit-sql --reset`、`reverse-export --since`、`--dry-run`），其他旗標、輸入輸出檔名、需要的環境變數名稱一律以各 CLI 的 `--help` 為準。** `gas-client` 需要的 `/exec` 網址與共享密鑰從環境變數讀：用 `read -s` 設在當下的 shell，不寫進 shell history，不貼進聊天。匯入的中間檔放 `tools/migrate/out/`（已 gitignore，security test 會檢查它沒被 git 追蹤）。
+`tools/migrate`（套件 `@food-log/migrate`）的 CLI 一律這樣跑，下文簡寫成 `MG <script>`（腳本的工作目錄是 `tools/migrate/`，所以 `out/…` 指的是 `tools/migrate/out/…`）：
+
+```bash
+npx -y pnpm@10 --filter @food-log/migrate <script> …
+```
+
+| 腳本 | 用途 | 介面 |
+|---|---|---|
+| `fetch-sheet` | 讀整份 Sheet（只用唯讀的 `read` 與 `history`）寫成 `out/sheet-<時間>.json`（權限 0600） | 環境變數 `GAS_URL`（舊 `/exec` 網址）與 `GAS_SECRET`（舊共享密鑰）；`--out <資料夾>` 可改輸出位置 |
+| `emit-sql` | 轉換（`transform`）並產生匯入 SQL | `--sheet <out/sheet-*.json> --user-id <owner user.id> [--reset] [--local] [--max-bytes N] [--db food-log]`；寫出 `out/import-<時間>/import-NNN-of-MMM.sql` 與 `anomalies.json`，並**依序**印出要執行的 `wrangler d1 execute` 指令 |
+| `d1-dump-command` | 印出把 D1 傾印成 JSON 的**唯讀**指令（輸出到 `tools/migrate/out/d1-dump.json`） | `[--local]`（預設 `--remote`） |
+| `verify` | 比對 Sheet 與 D1 傾印；任何不符結束碼 1 | `--sheet <sheet.json> --dump <d1-dump.json> --user-id <owner user.id>` |
+| `reverse-export` | 回滾用：把 `version > V_cut` 的 v2 資料轉成 GAS 動作寫回 Sheet | `--dump <d1-dump.json> --since <V_cut> --user-id <owner user.id> --fetch-base [--dry-run] [--plan-out <檔>]`；實際寫入需要 `GAS_URL`、`GAS_SECRET` |
+
+`gas-client` 與 `transform` 是函式庫，不是獨立的 CLI（`fetch-sheet`、`emit-sql`、`verify`、`reverse-export` 內部呼叫它們）。
+
+- **`GAS_URL`、`GAS_SECRET` 只放環境變數**：用 `read -s` 設在當下的 shell（`read -s GAS_SECRET; export GAS_SECRET`），不寫進 shell history、不貼進聊天、不寫進任何檔案。
+- **`--user-id` 是 owner 的 `user.id`**（不是 email）：
+  ```bash
+  WR d1 execute food-log --remote --command "SELECT id, email FROM user"
+  ```
+  先完成 1.3 的 bootstrap owner，這個指令才查得到。
+- **`--reset` 的規則**：不加 `--reset` 的 `emit-sql` **只用在第一次匯入、而且 D1 是空的**（逐列 upsert，不會刪除 v2 裡已經改掉或刪掉的東西）。之後每一次匯入，**包含切換當天，一律加 `--reset`**：它先刪掉 owner 的六張業務表，再寫入全部資料，並寫入新的 epoch（所有裝置下次 pull 會重置）。
+- 輸出的 `out/` 裡全是私人資料：已 gitignore（security test 會檢查它沒被 git 追蹤），不要複製到 repo 以外的共享位置。
 
 ---
 
@@ -93,19 +116,30 @@ npx -y pnpm@10 --filter @food-log/api run deploy
 
 ### 1.4 ⛔ Brian-only：可重複的匯入（從舊 Sheet 到 D1）
 
-用真實資料匯入前確認 `tools/migrate/out/` 沒被 git 追蹤（`git status` 看不到它）。流程（旗標以各 CLI 的 `--help` 為準）：
+用真實資料匯入前確認 `tools/migrate/out/` 沒被 git 追蹤（`git status` 看不到它）。工具見「指令慣例」的 `MG` 表。
 
-```text
-gas-client / fetch-sheet   →  抓整份 Sheet（read，再用 history 往回翻到底）
-transform                  →  純函式轉換，anomalies[] 列出所有調整
-emit-sql                   →  產生 SQL（依 id upsert）
-WR d1 execute food-log --remote --file <emit-sql 的輸出檔>
-verify                     →  比對兩邊
+```bash
+# 1. 抓整份 Sheet（read，再用 history 往回翻到底）
+read -s GAS_SECRET; export GAS_SECRET            # 貼舊共享密鑰，不會顯示
+export GAS_URL=<GAS_EXEC_URL>
+MG fetch-sheet                                    # 寫出 out/sheet-<時間>.json（0600），印出抓到幾列
+
+# 2. 產生 SQL（transform 在裡面）
+MG emit-sql --sheet out/sheet-<時間>.json --user-id <OWNER_USER_ID> [--reset]
+#   寫出 out/import-<時間>/import-NNN-of-MMM.sql 與 anomalies.json，
+#   並依序印出要執行的指令（⛔ 遠端 D1）：
+#   npx -y pnpm@10 --filter @food-log/api exec wrangler d1 execute food-log --remote --file '<…/import-001-of-00M.sql>'
+#   …（照印出的順序，一個一個執行）
+
+# 3. 傾印 D1 並比對
+MG d1-dump-command                                # 印出唯讀指令；貼上執行，得到 out/d1-dump.json
+MG verify --sheet out/sheet-<時間>.json --dump out/d1-dump.json --user-id <OWNER_USER_ID>   # 不符就結束碼 1
 ```
 
-- 雙軌期用不加 `--reset` 的 `emit-sql`（依 id upsert，可以重複跑，結果相同）。
-- 仔細讀 `transform` 的 `anomalies[]`（體重同一天多筆保留最新一筆、`day` 修正等）；有看不懂的調整，先問再切換。
-- `verify` 要全對：每張表未刪除／已刪除的列數、每日營養素加總、Config 每個值、收藏集合、每日體重。有差異不進入切換日。
+- **第一次匯入**（D1 還是空的）：不加 `--reset`。**之後每一次重新匯入（含雙軌期反覆匯入）都要加 `--reset`**：先刪掉 owner 的業務表再整批寫入，並換新的 epoch，已經登入 v2 的測試裝置會被重置、重新同步；不加 `--reset` 的 upsert 不會刪掉 v2 裡後來才刪的列。
+- SQL 檔要**依序**執行（`import-001-of-…` 先）；中途失敗就修好原因後**從第一個檔重新依序全部跑**（每列是 upsert，可以重跑；用了 `--reset` 時第一個檔會先刪掉 owner 的資料，所以不能只單獨重跑後面或前面的某個檔）。
+- 仔細讀 `anomalies.json`（以及 `emit-sql` 印出的 anomalies 統計：體重同一天多筆保留最新一筆、`day` 修正、補 id 等）；有看不懂的調整，先問再切換。
+- `verify` 要全對：每張表未刪除／已刪除的列數與 id 集合、每日營養素加總、每日體重、Config 每個值、收藏集合。有差異不進入切換日。`verify` 的預期值是「原始 Sheet 扣掉 `anomalies` 記錄的調整」，所以沒記在 anomalies 裡的差異就是 bug，要回報。
 - 匯入完在 D1 確認版本號有動：
   ```bash
   WR d1 execute food-log --remote --command "SELECT key, value FROM meta"
@@ -195,27 +229,28 @@ Apps Script 編輯器 → 專案設定 → 指令碼屬性，新增或修改 `RE
 - 失敗清單裡的項目：手動在新 App 補記，或確認不需要，**不要直接略過**，因為切換後舊 App 的待送資料就永遠送不出去。
 - 全部清空後再進入下一步。
 
-### 步驟 3　⛔ 最後一次匯入（fetch → transform → `emit-sql --reset` → 套用 → verify），記下 `V_cut`
+### 步驟 3　⛔ 最後一次匯入（fetch-sheet → emit-sql --reset → 套用 → verify），記下 `V_cut`
 
-旗標以各 CLI 的 `--help` 為準：
-
-```text
-fetch-sheet                 # 此時 GAS 唯讀，抓到的就是最終資料
-transform
-emit-sql --reset            # 清空 D1 業務表，寫入全部資料，並寫入新的 epoch（所有裝置會重置並重新同步）
-WR d1 execute food-log --remote --file <emit-sql 的輸出檔>   # 套用（指令見下）
-verify                      # 必須全對
-```
-
-套用指令（檔名以 `emit-sql` 的輸出為準）：
+此時 GAS 已唯讀，抓到的就是最終資料。**切換當天一律加 `--reset`**（即使雙軌期已經匯入過）：
 
 ```bash
-WR d1 execute food-log --remote --file <emit-sql 的輸出檔>
+read -s GAS_SECRET; export GAS_SECRET             # 舊共享密鑰（此時還沒輪替，步驟 4 才換）
+export GAS_URL=<GAS_EXEC_URL>
+WR d1 execute food-log --remote --command "SELECT id, email FROM user"      # 記下 owner 的 id → <OWNER_USER_ID>
+
+MG fetch-sheet                                    # → out/sheet-<時間>.json
+MG emit-sql --sheet out/sheet-<時間>.json --user-id <OWNER_USER_ID> --reset
+#   → out/import-<時間>/import-NNN-of-MMM.sql + anomalies.json；印出的 wrangler 指令「依序」全部執行
+#   （第一個檔先刪掉 owner 的六張業務表並寫入新 epoch，所有裝置會重置並重新同步）
+
+MG d1-dump-command                                # 貼上印出的唯讀指令 → out/d1-dump.json
+MG verify --sheet out/sheet-<時間>.json --dump out/d1-dump.json --user-id <OWNER_USER_ID>   # 必須結束碼 0
 ```
 
 - `--reset` 會改 epoch，已登入的裝置會被要求重置本機資料再 pull；匯入前先確認第 2 步已完成。
-- `verify` 有任何差異就**停下**，不要繼續；差異排除前保持 GAS 唯讀（唯讀期間舊資料不會再變，可以安心重來）。
-- **記下 `V_cut`**：套用完成後，D1 `meta` 的 `version`（以 `verify` 的輸出為準，也用下面的 SQL 交叉確認）。回滾時 `reverse-export --since <V_cut>` 靠它找出「切換之後 v2 才有的寫入」。
+- 中途失敗就**從第一個檔重新依序全部跑**。
+- `verify` 有任何差異（結束碼 1）就**停下**，不要繼續；差異排除前保持 GAS 唯讀（唯讀期間舊資料不會再變，可以安心重來整個步驟）。
+- **記下 `V_cut`**：全部 SQL 套用完成後，D1 `meta` 的 `version`（`verify` 的輸出也會列出 meta 版本，兩邊要一致）。回滾時 `reverse-export --since <V_cut>` 靠它找出「切換之後 v2 才有的寫入」。
   ```bash
   WR d1 execute food-log --remote --command "SELECT key, value FROM meta WHERE key IN ('version', 'epoch')"
   ```
@@ -229,7 +264,7 @@ WR d1 execute food-log --remote --file <emit-sql 的輸出檔>
    ```
    把印出的整行指令（同樣是 `WR d1 execute food-log --remote --command '…'`）貼上執行，才算寫進 D1。
 2. 切換 Kyujin 的設定：Base URL 改成 `https://<WORKER_HOST>/bot/v1`，key 從 `kyujin.env` 讀（`FOODLOG_API_BASE`、`FOODLOG_API_KEY`），請求格式與欄位名照 [`docs/kyujin-api-v2.md`](../kyujin-api-v2.md)。用一個讀取請求（`read`）確認通了。
-3. **輪替舊的共享密鑰**：把 GAS Script Property `SHARED_SECRET` 換成新的隨機值（舊的作廢）。這樣即使舊設定還留在某處，也無法再打舊 `/exec`。新值不用記，回滾時要用再換（見第四節）。
+3. **輪替舊的共享密鑰**：把 GAS Script Property `SHARED_SECRET` 換成新的隨機值（舊的作廢）。這樣即使舊設定還留在某處，也無法再打舊 `/exec`。**新值要存進密碼管理員**：回滾時 `reverse-export` 要用它當 `GAS_SECRET`（它讀的是 GAS 目前的值），舊 App 與舊 Kyujin 設定回滾後也要用它（或換回舊值，見第四節 B、F）。
 4. 之後若要輪替 Kyujin 的 key：用 `--key-file` 發第二把、切過去，再 `node workers/api/scripts/bot-key.ts --revoke <key id> --remote`（`--list` 可查 key id）撤銷舊的；撤銷後下一個請求就是 401。
 
 ### 步驟 5　⛔ 打開新網址、登入、加到主畫面、確認今天的資料
@@ -349,17 +384,27 @@ npx -y pnpm@10 --filter @food-log/app build
 
    撤銷沒有快取，下一個請求就是 401（`docs/kyujin-api-v2.md`：Kyujin 收到 401 不重試，會通知 Brian）。**步驟 F 仍然成立**：F 是把 Kyujin 的設定改回舊 GAS（`<GAS_EXEC_URL>` + 共享密鑰），那是另一條路；撤銷 v2 key 只是在 F 完成前擋住它對 v2 的寫入，並保證 `reverse-export` 看到的是最終資料。之後若重新切到 v2，要再發新 key（切換步驟 4）。
 
-**B（第 1 項）GAS `READ_ONLY=0`**：Apps Script 編輯器 → 專案設定 → 指令碼屬性，把 `READ_ONLY` 改成 `0`（或刪除）。同時**把 `SHARED_SECRET` 換回舊 Kyujin 設定與舊 App 要用的值**（第二節步驟 4 輪替過它；舊值若已不可得，就產生新值，並在 F 步驟更新所有舊設定，舊 App 的共享密鑰要重新貼）。
+**B（第 1 項）GAS `READ_ONLY=0`**：Apps Script 編輯器 → 專案設定 → 指令碼屬性，把 `READ_ONLY` 改成 `0`（或刪除）。**先不要動 `SHARED_SECRET`**：`reverse-export` 要用它當 `GAS_SECRET`（第二節步驟 4 輪替後的新值，在密碼管理員裡；也可以從指令碼屬性複製）。舊 App 與舊 Kyujin 設定要用哪個值，在步驟 F 處理。
 
-**C、D（第 2 項）把切換之後 v2 的寫入反向寫回 Sheet**（旗標以 `--help` 為準）：
+**C、D（第 2 項）把切換之後 v2 的寫入反向寫回 Sheet。** 先把 v2 的最終狀態傾印下來（A 已擋住所有寫入，所以這份就是最終資料），再 dry-run，確認後正式執行：
 
-```text
-reverse-export --since <V_cut> --dry-run     # 先看會寫什麼：讀 version > V_cut 的列，依版本順序轉成 GAS action
-reverse-export --since <V_cut>               # 確認無誤後正式執行
+```bash
+mkdir -p tools/migrate/out
+MG d1-dump-command                                # 印出唯讀指令；貼上執行 → tools/migrate/out/d1-dump.json
+export GAS_URL=<GAS_EXEC_URL>
+read -s GAS_SECRET; export GAS_SECRET             # GAS 目前的 SHARED_SECRET
+
+# C：dry-run。--fetch-base 用唯讀的 read / history 抓 Sheet 現況，計畫只包含真的有差別的步驟
+MG reverse-export --dump out/d1-dump.json --since <V_CUT> --user-id <OWNER_USER_ID> --fetch-base --dry-run --plan-out out/rollback-plan.json
+
+# D：確認計畫（看得懂每一步、數量合理）後，同一個指令拿掉 --dry-run，正式寫入
+MG reverse-export --dump out/d1-dump.json --since <V_CUT> --user-id <OWNER_USER_ID> --fetch-base
 ```
 
-轉成的 GAS action 有：`upsertStore`、`upsertItem`、`setConfig`、`append`／`update`、`upsertWeight`、`softDelete`。`--dry-run` 可以重跑；正式執行失敗可以重跑（冪等）。完成後用 `verify`（或人工抽查幾天的加總）確認 Sheet 與 v2 一致。
-
+- `<OWNER_USER_ID>` 用 `WR d1 execute food-log --remote --command "SELECT id, email FROM user"` 查（`<V_CUT>` 是切換步驟 3 記下的數字）。
+- 轉成的 GAS 動作：`upsertStore`、`upsertItem`、`setConfig`、`append`／`update`、`upsertWeight`、`softDelete`。
+- **重複執行 D（含 `--fetch-base`），直到它回報 0 steps**：每次只送 Sheet 上還有差別的步驟，所以失敗後重跑、或跑兩次都是安全的；0 steps 就等於「Sheet 已經和 v2 一致」，這是這一步的驗證。有步驟失敗時結束碼是 1，輸出會列出失敗的步驟。
+- 舊 Sheet 上沒有 id 的體重列無法用 id 定位刪除（`reverse-export` 的已知限制，輸出會標示）。
 **E（第 3 項）從 tag `v1-final` 重新部署 GitHub Pages**，取代「會自我移除的 Service Worker」導向版本：
 
 ```bash
@@ -370,7 +415,7 @@ npm ci && ./scripts/deploy-gh-pages.sh
 
 （若 GAS 的程式本身也要回到 `v1-final` 的版本：`npm run deploy:gas`，在同一個 `app/` 下。一般情況 GAS 沒改過，不需要。）部署完用舊主畫面圖示開啟，確認 Service Worker 已被新的取代、App 載入舊版，並能連到 GAS。已被導向版本清掉 Service Worker 的裝置重新開 `<GH_PAGES_URL>` 即可。
 
-**F（第 4 項）Kyujin 換回舊設定**：把 Kyujin 的設定改回舊 `<GAS_EXEC_URL>` 與（B 步驟處理過的）共享密鑰，請求格式回到 [`docs/kyujin-api.md`](../kyujin-api.md)。提醒裡的 `#weight` 連結也改回 `<GH_PAGES_URL>#weight`。
+**F（第 4 項）Kyujin 換回舊設定**：`reverse-export` 跑完（D 回報 0 steps）之後，才處理共享密鑰：舊 App 與舊 Kyujin 設定原本是用輪替前的舊值，二選一，**不要兩邊值不一致**：（1）把 GAS 的 `SHARED_SECRET` 改回輪替前的舊值（若還留著），或（2）把 GAS 目前的 `SHARED_SECRET` 貼進舊 App 與 Kyujin 的設定。然後把 Kyujin 的設定改回舊 `<GAS_EXEC_URL>`，請求格式回到 [`docs/kyujin-api.md`](../kyujin-api.md)。提醒裡的 `#weight` 連結也改回 `<GH_PAGES_URL>#weight`。
 
 **G 驗證**：舊 App 記一筆、重新整理仍在；Sheet 有那一列；Kyujin 的讀取與一個 `append` 都正常。
 
