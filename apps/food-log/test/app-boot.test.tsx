@@ -71,7 +71,11 @@ test('沒登入（getSession 回 null）：登入畫面，不會用本機資料�
 test('登入畫面可以改選「先在這支手機試用」：開本機試用模式，記住選擇，下次不問 session', async () => {
   const b = boot(null, async () => null)
   const user = userEvent.setup()
-  await user.click(await screen.findByRole('button', { name: '先在這支手機試用' }))
+  const trial = await screen.findByRole('button', { name: '先在這支手機試用' })
+  // 在正常流程裡（LoginScreen 下面），不是 fixed：登入碼表單展開時不會蓋住它的送出鍵
+  expect(trial.closest('.fixed')).toBeNull()
+  expect(document.body.innerHTML.indexOf('登入畫面（替身）')).toBeLessThan(document.body.innerHTML.indexOf('先在這支手機試用'))
+  await user.click(trial)
   expect(await screen.findByText('本機試用，不會同步到伺服器')).toBeTruthy()
   expect(b.opened).toEqual([null])
   expect(localStorage.getItem(KEYS.mode)).toBe('trial')

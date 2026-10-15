@@ -1,4 +1,4 @@
-import { useAppData } from '@/app/data'
+import { useAppData, useNowTick } from '@/app/data'
 import { useUi } from '@/app/ui'
 import { TodayScreen } from '@/screens/TodayScreen'
 import { useToast } from '@/features/toast/ToastProvider'
@@ -6,6 +6,7 @@ import { useWeightSheet } from '@/features/weight/WeightFeature'
 
 export function TodayPage() {
   const d = useAppData()
+  const nowTick = useNowTick()
   const ui = useUi()
   const { toast } = useToast()
   const { openWeight } = useWeightSheet()
@@ -30,7 +31,7 @@ export function TodayPage() {
       onRetry={d.retry}
       pending={d.pending}
       online={d.network !== 'offline'}
-      now={d.nowTick}
+      now={nowTick}
       failedLogCount={d.failedTodayLogs.length}
       hasToast={!!toast}
     />

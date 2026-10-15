@@ -90,6 +90,14 @@ export function createActions(deps: ActionDeps): Actions {
 
   const mutate = client.mutate.bind(client)
 
+  /**
+   * 品項的 ts 是「建立時間」，core 的 items.upsert 用 `a.ts || existing.ts`。編輯既有品項要把原本的 ts 帶回去
+   * （不然每改一次營養素，建立時間就被洗掉）；新的 id 才用現在。
+   */
+  async function itemTs(id: string): Promise<string> {
+    return (await client.db.view('items').get(id))?.ts ?? taipeiIso(now())
+  }
+
   function itemInput(item: MergedItem, macros: Macros4, ts: string): ItemInput {
     if (item.src === 'custom') {
       return {
@@ -137,10 +145,11 @@ export function createActions(deps: ActionDeps): Actions {
       const ts = taipeiIso(ms)
       const logId = newId()
       let fillItem: ItemInput | undefined
+      const fillId = item.src === 'custom' ? item.id : 'ov:' + item.id
       if (a.fill) {
-        fillItem = itemInput(item, { kcal: item.kcal, protein: a.fill.protein, fat: a.fill.fat, carb: a.fill.carb }, ts)
+        fillItem = itemInput(item, { kcal: item.kcal, protein: a.fill.protein, fat: a.fill.fat, carb: a.fill.carb }, await itemTs(fillId))
       } else if (a.nutrition && item.src === 'custom') {
-        fillItem = itemInput(filled, a.nutrition, ts)
+        fillItem = itemInput(filled, a.nutrition, await itemTs(fillId))
       }
       await mutate('logs.add@1', {
         log: {
@@ -220,7 +229,7 @@ export function createActions(deps: ActionDeps): Actions {
         fat: a.fat,
         carb: a.carb,
         store_id: a.storeId,
-        ts: taipeiIso(now()),
+        ts: await itemTs(id),
       })
       return { id }
     },
@@ -240,13 +249,13 @@ export function createActions(deps: ActionDeps): Actions {
         fat: a.fat,
         carb: a.carb,
         store_id: a.storeId || null,
-        ts: taipeiIso(now()),
+        ts: await itemTs(id),
       })
       return { id }
     },
 
     async saveNutrition(item, n) {
-      await mutate('items.upsert@1', itemInput(item, n, taipeiIso(now())))
+      await mutate('items.upsert@1', itemInput(item, n, await itemTs(item.src === 'custom' ? item.id : 'ov:' + item.id)))
       return { saved: true as const }
     },
 

@@ -60,8 +60,9 @@ npx -y pnpm@10 -r test                              # 單元測試：core、sync
 npx -y pnpm@10 -r typecheck
 npx -y pnpm@10 --filter @food-log/app build         # 型別檢查＋產出 dist/
 npx -y pnpm@10 --filter @food-log/legacy build:gas  # 改過 legacy/gas/*.gs 後重新產生 legacy/gas/FoodLog-AppsScript.gs（測試會檢查兩邊一致）
-npx -y pnpm@10 --filter @food-log/app e2e           # 真實點擊（WebKit）。會自己開 dev server；瀏覽器沿用 PLAYWRIGHT_DIR，不下載
 ```
+
+**TODO（計畫 §5）**：Playwright（WebKit）+ `wrangler dev --local` 的 e2e 還沒做；v1 的 `e2e/real-click.mjs`（靠已刪除的 mock localStorage 鍵）已移除。
 
 v1 的 `deploy`（gh-pages）與 `deploy:gas` 只存在於 `main`，v2 分支沒有；這次實作不要執行。
 

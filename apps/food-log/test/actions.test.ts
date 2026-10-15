@@ -13,14 +13,16 @@ import { NOW, TODAY, newServer } from './harness'
 let client: SyncClient
 let actions: Actions
 let ids = 0
+let clock = NOW
 
 beforeEach(async () => {
   ids = 0
+  clock = NOW
   const server = newServer()
   const transport = new MemoryTransport({ server })
   transport.online = false // 不送：pending 就是結果
-  client = await SyncClient.open({ userId: 'user-1', transport, now: () => NOW, dexie: { indexedDB: new IDBFactory(), IDBKeyRange }, newId: () => 'client-actions' })
-  actions = createActions({ client, now: () => NOW, newId: () => `id${++ids}` })
+  client = await SyncClient.open({ userId: 'user-1', transport, now: () => clock, dexie: { indexedDB: new IDBFactory(), IDBKeyRange }, newId: () => 'client-actions' })
+  actions = createActions({ client, now: () => clock, newId: () => `id${++ids}` })
 })
 
 const pendingNames = async () => (await client.db.pending.toArray()).map((p) => ({ name: p.name, args: p.args as Record<string, unknown> }))
@@ -205,4 +207,55 @@ test('失敗清單：重試 = 用新的 mutationId 再 mutate；捨棄 = 刪掉�
   const rows = await client.db.pending.toArray()
   expect(rows.at(-1)!.mutationId).toBeGreaterThan(0)
   expect(rows.at(-1)!.mutationId).not.toBe(7)
+})
+
+// ---- 編輯既有品項不能洗掉建立時間（items.ts 是 `a.ts || existing.ts`） ----
+
+const HOUR = 3600_000
+const itemRowOf = async (id: string) => (await client.db.view('items').get(id))!
+
+test('編輯自建品項（saveItem）：帶回原本的 ts；新 id 才用現在', async () => {
+  const { id } = await actions.saveItem({ name: '乳清', src: '其他', serving: '1 匙', servingG: 30, kcal: 120, protein: 24, fat: 1, carb: 2 })
+  const created = (await itemRowOf(id)).ts
+  expect(created).toBe('2026-10-10T18:00:00+08:00')
+  clock = NOW + HOUR
+  await actions.saveItem({ id, name: '乳清蛋白', src: '其他', serving: '1 匙', servingG: 30, kcal: 130, protein: 25, fat: 1, carb: 2 })
+  expect((await last()).args).toMatchObject({ id, name: '乳清蛋白', ts: created })
+  expect((await itemRowOf(id)).ts).toBe(created)
+  const other = await actions.saveItem({ name: '燕麥', src: '其他', serving: '1 碗', servingG: null, kcal: 300, protein: 10, fat: 5, carb: 50 })
+  expect((await itemRowOf(other.id)).ts).toBe('2026-10-10T19:00:00+08:00')
+})
+
+test('編輯店家品項（saveStoreItem）：ts 不變', async () => {
+  const { id: storeId } = await actions.createStore('阿財')
+  const { id } = await actions.saveStoreItem({ storeId, name: '牛肉麵', kcal: 520, protein: 28, fat: 18, carb: 62 })
+  const created = (await itemRowOf(id)).ts
+  clock = NOW + HOUR
+  await actions.saveStoreItem({ storeId, itemId: id, name: '牛肉麵', kcal: 540, protein: 30, fat: 18, carb: 62 })
+  expect((await last()).args).toMatchObject({ id, kcal: 540, ts: created })
+  expect((await itemRowOf(id)).ts).toBe(created)
+})
+
+test('只存營養素（saveNutrition）與記錄時改營養素（recordLog nutrition）：ts 不變', async () => {
+  const { id: storeId } = await actions.createStore('阿財')
+  const { id } = await actions.saveStoreItem({ storeId, name: '牛肉麵', kcal: 520, protein: 28, fat: 18, carb: 62 })
+  const created = (await itemRowOf(id)).ts
+  const beef = merged({ id, src: 'custom', name: '牛肉麵', sheetSrc: '其他', storeId, servingG: null, kcal: 520, protein: 28, fat: 18, carb: 62 })
+  clock = NOW + HOUR
+  await actions.saveNutrition(beef, { kcal: 560, protein: 30, fat: 20, carb: 60 })
+  expect((await last()).args).toMatchObject({ id, kcal: 560, ts: created })
+  clock = NOW + 2 * HOUR
+  await actions.recordLog({ item: beef, qty: 1, grams: null, nutrition: { kcal: 580, protein: 31, fat: 20, carb: 60 } })
+  expect((await last()).args).toMatchObject({ item: { id, kcal: 580, ts: created } })
+  expect((await itemRowOf(id)).ts).toBe(created)
+})
+
+test('記錄時補填：已經有 ov: 補填就沿用它的 ts；第一次補填才是現在', async () => {
+  await actions.recordLog({ item: pasta, qty: 1, grams: null, fill: { protein: 20, fat: 10, carb: 50 } })
+  const created = (await itemRowOf('ov:711:x')).ts
+  expect(created).toBe('2026-10-10T18:00:00+08:00')
+  clock = NOW + HOUR
+  await actions.recordLog({ item: pasta, qty: 1, grams: null, fill: { protein: 22, fat: 11, carb: 51 } })
+  expect((await last()).args).toMatchObject({ item: { id: 'ov:711:x', protein: 22, ts: created } })
+  expect((await itemRowOf('ov:711:x')).ts).toBe(created)
 })

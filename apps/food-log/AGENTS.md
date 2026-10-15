@@ -82,7 +82,6 @@ npx -y pnpm@10 install
 npx -y pnpm@10 -r test                         # 全部單元測試（前端 + legacy），必須全過
 npx -y pnpm@10 --filter @food-log/app build    # tsc -b + vite build，必須沒有錯誤
 npx -y pnpm@10 --filter @food-log/legacy build:gas   # 改過 legacy/gas/ 才需要
-npx -y pnpm@10 --filter @food-log/app e2e      # 真實點擊；自己開 dev server，PLAYWRIGHT_DIR 預設已設，不下載瀏覽器
 ```
 
 改動後的驗證：
@@ -92,6 +91,8 @@ npx -y pnpm@10 --filter @food-log/app e2e      # 真實點擊；自己開 dev se
 3. 不要在沒有 Brian 同意的情況下，用真實的 `/exec` 網址和密鑰寫入測試資料；真實 Sheet 是正式資料。
 4. 部署前端（v1，`./scripts/deploy-gh-pages.sh`）**只能在 `main` 做**，v2 分支沒有這支腳本，不要從 v2 部署。之後打開 https://brian-konr.github.io/food-log/ 確認能載入。沒有 Brian 同意不要部署。
 5. 改了 `legacy/gas/` 的話，前端部署不會更新後端；要請 Brian 在 `main` 照 README「更新程式碼」重新部署新版本。
+
+e2e：v1 的 `e2e/real-click.mjs` 已移除，v2 的 Playwright + `wrangler dev --local` e2e 是計畫 §5 的 TODO。
 
 預設測試環境是 `node`；只有 `*.test.tsx` 在檔案第一行寫 `// @vitest-environment jsdom`。
 

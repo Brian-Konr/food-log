@@ -35,8 +35,6 @@ export interface Macros4 {
 
 export interface AppData {
   today: string
-  /** 每秒一跳（只在有待送資料時），給「待上傳」判斷用。 */
-  nowTick: number
   mode: 'trial' | 'account'
   /** 本機資料庫的 live query 都讀出來了。 */
   ready: boolean
@@ -123,7 +121,7 @@ function useBrowserOnline(): boolean {
  * 中間會有一個畫面「紀錄已經來了、設定還是預設值」，那就是假數字（預設的 2000 kcal）。
  * （sync-client 的 useItems／useConfig… 是各表獨立的版本，給單一表的畫面用。）
  */
-interface Snapshot {
+export interface Snapshot {
   items: ItemRow[]
   stores: StoreRow[]
   favIds: string[]
@@ -138,8 +136,30 @@ interface Snapshot {
 
 const live = <T extends { deleted_at: string | null }>(r: T): boolean => r.deleted_at === null
 
-async function readSnapshot(db: FoodLogDb, userId: string | null, fromDay: string, toDay: string): Promise<Snapshot> {
-  return db.transaction('r', db.allTables, async () => {
+/**
+ * 每張表上一次讀到的內容（用 JSON 當簽名）。內容沒變就回同一個陣列／物件：
+ * pull 每次都會寫 meta（cookie、pullRun…），每次 mutate 也會讓整個快照重讀，但只動到紀錄時，
+ * items／stores／favorites 的參照不變，下游的 mergeCatalog、buildIndex（整個官方目錄）就不會重算。
+ * （簽名是整列內容，不是 version／updated_at：本機編輯不會 bump version，updated_at 只到秒，同一秒的兩次編輯會看不出來。）
+ */
+export type SnapshotCache = Map<string, { sig: string; value: unknown }>
+export const createSnapshotCache = (): SnapshotCache => new Map()
+
+function reuse<T>(cache: SnapshotCache, key: string, value: T, sig: string = JSON.stringify(value)): T {
+  const prev = cache.get(key)
+  if (prev && prev.sig === sig) return prev.value as T
+  cache.set(key, { sig, value })
+  return value
+}
+
+export async function readSnapshot(
+  db: FoodLogDb,
+  userId: string | null,
+  fromDay: string,
+  toDay: string,
+  cache: SnapshotCache = createSnapshotCache(),
+): Promise<Snapshot> {
+  const read = await db.transaction('r', db.allTables, async () => {
     const [items, stores, favs, config, logs, weights, failed, pending, cookie] = await Promise.all([
       db.view('items').toArray(),
       db.view('stores').toArray(),
@@ -151,25 +171,35 @@ async function readSnapshot(db: FoodLogDb, userId: string | null, fromDay: strin
       db.pending.toArray(),
       db.getMeta<string>('cookie', ''),
     ])
-    const info = new Map<string, number>()
-    for (const p of pending) {
-      for (const k of p.touched) {
-        const prev = info.get(k)
-        if (prev === undefined || p.clientTs < prev) info.set(k, p.clientTs)
-      }
-    }
-    return {
-      items: items.filter(live),
-      stores: stores.filter(live),
-      favIds: favs.filter(live).map((f) => f.item_id),
-      config: config ?? defaultConfigRow(userId ?? 'local'),
-      logs: logs.filter(live).sort((a, b) => a.day.localeCompare(b.day) || (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0)),
-      weights: weights.filter(live),
-      failed,
-      pending: info,
-      hasServerData: cookie !== '',
-    }
+    return { items, stores, favs, config, logs, weights, failed, pending, cookie }
   })
+  const info = new Map<string, number>()
+  for (const p of read.pending) {
+    for (const k of p.touched) {
+      const prev = info.get(k)
+      if (prev === undefined || p.clientTs < prev) info.set(k, p.clientTs)
+    }
+  }
+  const snap: Snapshot = {
+    items: reuse(cache, 'items', read.items.filter(live)),
+    stores: reuse(cache, 'stores', read.stores.filter(live)),
+    favIds: reuse(cache, 'favIds', read.favs.filter(live).map((f) => f.item_id)),
+    config: reuse(cache, 'config', read.config ?? defaultConfigRow(userId ?? 'local')),
+    logs: reuse(
+      cache,
+      'logs',
+      read.logs.filter(live).sort((a, b) => a.day.localeCompare(b.day) || (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0)),
+    ),
+    weights: reuse(cache, 'weights', read.weights.filter(live)),
+    failed: reuse(cache, 'failed', read.failed),
+    pending: reuse(cache, 'pending', info as PendingInfo, JSON.stringify([...info])),
+    hasServerData: read.cookie !== '',
+  }
+  // 整張快照也一樣：什麼都沒變（例如只寫了 meta）就回同一個物件，React 不會重新 render
+  const last = cache.get('last')?.value as Snapshot | undefined
+  if (last && (Object.keys(snap) as (keyof Snapshot)[]).every((k) => last[k] === snap[k])) return last
+  cache.set('last', { sig: '', value: snap })
+  return snap
 }
 
 const ZERO: Macros4 = { kcal: 0, protein: 0, fat: 0, carb: 0 }
@@ -182,7 +212,8 @@ export function DataProvider(props: { children?: ReactNode }) {
   const today = useToday(now)
 
   const fromDay = addDays(today, -LOG_WINDOW_DAYS)
-  const snap = useLiveQuery(() => readSnapshot(client.db, client.userId, fromDay, today), [client, fromDay, today])
+  const snapCache = useMemo(createSnapshotCache, [client])
+  const snap = useLiveQuery(() => readSnapshot(client.db, client.userId, fromDay, today, snapCache), [client, fromDay, today, snapCache])
   const itemRows = snap?.items
   const storeRows = snap?.stores
   const favIds = snap?.favIds
@@ -216,15 +247,6 @@ export function DataProvider(props: { children?: ReactNode }) {
     failStreak: session.failStreak,
     hasCache: hasData,
   })
-
-  // 有待送資料時每秒跳一下，LogRow 才知道什麼時候超過 3 秒要標「待上傳」。
-  const [nowTick, setNowTick] = useState(() => now())
-  useEffect(() => {
-    setNowTick(now())
-    if (!pending) return
-    const t = setInterval(() => setNowTick(now()), 1000)
-    return () => clearInterval(t)
-  }, [pending, now])
 
   const stores = useMemo(() => (storeRows ?? []).map(toStoreRecord), [storeRows])
   const items = useMemo(() => mergeCatalog(catalogItems, itemRows ?? [], favIds ?? [], storeRows ?? []), [catalogItems, itemRows, favIds, storeRows])
@@ -271,7 +293,6 @@ export function DataProvider(props: { children?: ReactNode }) {
   const value = useMemo<AppData>(
     () => ({
       today,
-      nowTick,
       mode: client.mode,
       ready,
       loadState,
@@ -303,7 +324,34 @@ export function DataProvider(props: { children?: ReactNode }) {
     }),
     // error/copy 由 status、session 決定
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [today, nowTick, client, ready, loadState, error?.kind, error?.code, staleToday, todayKnown, syncing, network, pending, items, itemsById, indexed, stores, logs, todayLogs, failedTodayLogs, failedByLogId, failed, weights, configMap, targets, eaten, remain, remainLine, dockChips],
+    [today, client, ready, loadState, error?.kind, error?.code, staleToday, todayKnown, syncing, network, pending, items, itemsById, indexed, stores, logs, todayLogs, failedTodayLogs, failedByLogId, failed, weights, configMap, targets, eaten, remain, remainLine, dockChips],
   )
-  return <DataContext.Provider value={value}>{props.children}</DataContext.Provider>
+  return (
+    <DataContext.Provider value={value}>
+      <NowTickProvider pending={pending} now={now}>
+        {props.children}
+      </NowTickProvider>
+    </DataContext.Provider>
+  )
+}
+
+// ---- 「待上傳」的時鐘 ----
+// LogRow 要知道「排進佇列超過 3 秒了沒」，所以有待送資料時每秒跳一下。這個時鐘放在自己的 context：
+// 主要的 AppData 不會每秒換一次，只有讀 useNowTick 的（今天頁）會重畫。
+
+const NowTickContext = createContext<number>(0)
+
+/** 有待送資料時每秒更新的現在時間（epoch ms）；沒有待送資料時是最近一次的值。 */
+export const useNowTick = (): number => useContext(NowTickContext)
+
+function NowTickProvider(props: { pending: number; now: () => number; children?: ReactNode }) {
+  const { pending, now } = props
+  const [tick, setTick] = useState(() => now())
+  useEffect(() => {
+    setTick(now())
+    if (!pending) return
+    const t = setInterval(() => setTick(now()), 1000)
+    return () => clearInterval(t)
+  }, [pending, now])
+  return <NowTickContext.Provider value={tick}>{props.children}</NowTickContext.Provider>
 }

@@ -5,16 +5,16 @@
 //        沒登入 → 登入畫面（passkey／登入碼；可以改選試用）
 //        連不到伺服器 → 有登入過的 userId 就直接用本機資料庫打開（離線也能記），否則登入畫面
 //   3. 同步途中收到 401（phase = auth）→ 蓋一層登入畫面，待送資料保留，登入完成就 resume。
-// 登入畫面（features/auth/LoginScreen）與 authClient（features/auth/auth-client）是獨立做的；
-// authClient.getSession() 離線或 5xx 會丟例外（不是「沒登入」），只有確定沒登入才回 null。
-import { useCallback, useEffect, useRef, useState } from 'react'
+// 登入畫面（features/auth/LoginScreen）與 authClient（features/auth/auth-client）是獨立做的，而且只在需要時才動態載入
+// （better-auth 不進首頁 bundle，見 auth-lazy.ts）。getSession 離線或 5xx 會丟例外（不是「沒登入」），只有確定沒登入才回 null。
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type { RouterHistory } from '@tanstack/history'
 import { FetchTransport, SyncClient, useSyncClient, useSyncStatus } from '@food-log/sync-client'
 import { KEYS, cleanupLegacyKeys, readLocal, removeLocal, writeLocal } from '@/lib/local-storage'
 import type { CatalogItem } from '@/types'
-import { authClient } from '@/features/auth/auth-client'
-import { LoginScreen } from '@/features/auth/LoginScreen'
 import type { ComponentType } from 'react'
+import { LazyLoginScreen, defaultAuth } from './auth-lazy'
+import type { BootAuth } from './auth-lazy'
 import { AppProviders } from './providers'
 import { trackTooOld } from './update-info'
 import type { Controls } from './controls'
@@ -24,7 +24,7 @@ export interface AppProps {
   client?: SyncClient
   /** 開 client 的方式；userId 是 null 就是試用模式。預設：Dexie + FetchTransport。 */
   openClient?: (userId: string | null) => Promise<SyncClient>
-  authClient?: Pick<typeof authClient, 'getSession' | 'signOut'>
+  authClient?: BootAuth
   LoginScreen?: ComponentType<{ onSignedIn(): void }>
   now?: () => number
   catalogItems?: CatalogItem[]
@@ -42,8 +42,8 @@ type Boot = { kind: 'booting' } | { kind: 'login' } | { kind: 'ready'; client: S
 
 export default function Root(props: AppProps) {
   const open = props.openClient ?? defaultOpenClient
-  const auth = props.authClient ?? authClient
-  const Login = props.LoginScreen ?? LoginScreen
+  const auth = props.authClient ?? defaultAuth
+  const Login: ComponentType<{ onSignedIn(): void }> = props.LoginScreen ?? LazyLoginScreen
   const [boot, setBoot] = useState<Boot>(props.client ? { kind: 'ready', client: props.client } : { kind: 'booting' })
   const [nonce, setNonce] = useState(0)
   const bootRef = useRef(boot)
@@ -120,15 +120,21 @@ export default function Root(props: AppProps) {
 
   if (boot.kind === 'booting') return <div className="min-h-dvh bg-background" aria-busy="true" />
   if (boot.kind === 'login') {
+    // 試用按鈕放在 LoginScreen 下面的正常流程裡，不用 fixed：登入碼表單展開、鍵盤升起時才不會被它蓋住送出鍵。
+    // LoginScreen 自己是 min-h-dvh 置中；包一層 flex，讓它填滿「按鈕以上」的空間（覆蓋它的 min-h），按鈕就在畫面底部。
     return (
-      <>
-        <Login onSignedIn={() => { setBoot({ kind: 'booting' }); setNonce((n) => n + 1) }} />
-        <div className="fixed inset-x-0 bottom-0 z-[60] mx-auto w-full max-w-xl px-6 pb-[calc(var(--safe-bottom)+16px)]">
+      <div className="flex min-h-dvh flex-col">
+        <div className="flex flex-1 flex-col [&>div]:min-h-0 [&>div]:flex-1">
+          <Suspense fallback={<div className="flex-1 bg-background" aria-busy="true" />}>
+            <Login onSignedIn={() => { setBoot({ kind: 'booting' }); setNonce((n) => n + 1) }} />
+          </Suspense>
+        </div>
+        <div className="mx-auto w-full max-w-xl px-6 pb-[calc(var(--safe-bottom)+16px)] pt-4">
           <button type="button" className="h-12 w-full rounded-[var(--radius)] bg-secondary font-semibold" onClick={() => void startTrial()}>
             先在這支手機試用
           </button>
         </div>
-      </>
+      </div>
     )
   }
   return (
@@ -153,7 +159,9 @@ function ReauthOverlay(props: { Login: ComponentType<{ onSignedIn(): void }> }) 
   const { Login } = props
   return (
     <div className="fixed inset-0 z-[70] overflow-y-auto bg-background">
-      <Login onSignedIn={() => client.resume()} />
+      <Suspense fallback={null}>
+        <Login onSignedIn={() => client.resume()} />
+      </Suspense>
     </div>
   )
 }

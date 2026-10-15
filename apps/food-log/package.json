@@ -13,8 +13,7 @@
     "preview": "vite preview --host",
     "test": "vitest run",
     "typecheck": "tsc -b",
-    "build:catalog": "node scripts/build-catalog.mjs",
-    "e2e": "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 PLAYWRIGHT_DIR=/workspace/photo-repro/node_modules/playwright node e2e/real-click.mjs"
+    "build:catalog": "node scripts/build-catalog.mjs"
   },
   "dependencies": {
     "@better-auth/passkey": "1.7.10",

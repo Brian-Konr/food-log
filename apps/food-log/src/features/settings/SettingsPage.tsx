@@ -1,9 +1,6 @@
 import { useSyncClient } from '@food-log/sync-client'
 import { useAppData } from '@/app/data'
 import { useControls } from '@/app/controls'
-import { authClient } from '@/features/auth/auth-client'
-import { AUTH_ERROR_COPY, CANCELLED_HINT } from '@/features/auth/LoginScreen'
-import { mapAuthError } from '@/features/auth/auth-client'
 import { useActions, useServices } from '@/app/services'
 import { SyncBadge } from '@/components/SyncBadge'
 import { SettingsScreen } from '@/screens/SettingsScreen'
@@ -39,6 +36,15 @@ export function SettingsPage() {
   }
 
   async function addPasskey() {
+    // better-auth 的 passkey client 只在這時候才載入（不進首頁 bundle）
+    let mods: [typeof import('@/features/auth/auth-client'), typeof import('@/features/auth/LoginScreen')]
+    try {
+      mods = await Promise.all([import('@/features/auth/auth-client'), import('@/features/auth/LoginScreen')])
+    } catch {
+      showToast('新增 passkey 失敗，請確認網路後再試')
+      return
+    }
+    const [{ authClient, mapAuthError }, { AUTH_ERROR_COPY, CANCELLED_HINT }] = mods
     try {
       await authClient.addPasskey()
       showToast('已新增 passkey')
