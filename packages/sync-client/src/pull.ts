@@ -7,7 +7,7 @@ import { applyPullPage } from './rebase'
 import { TooOldError } from './transport'
 import type { Transport } from './transport'
 
-/** 單次 pull 最多幾頁（防無窮迴圈；每頁 2,000 列，一年資料不到 1 萬列）。 */
+/** 單次 pull 最多幾頁（防無窮迴圈；每頁 1,000 列，一年資料不到 1 萬列）。 */
 export const MAX_PULL_PAGES = 500
 
 export interface PullEnv {

@@ -6,9 +6,11 @@
 //   - 讀取順序：先 cursor（lastMutationId 與錯誤），再 meta，最後列。一筆 mutation 的列和 cursor 在同一個 batch 提交，
 //     所以「先讀到 cursor = m」代表 m 的列在之後讀的 meta／列裡一定看得到；反過來（先讀列再讀 cursor）會出現
 //     「回應宣稱 m 已處理、但列還沒在回應裡」，前端會把待送的 m 丟掉，畫面上那一列閃一下消失。
+//   - 快速路徑：store 有 pullSnapshot 時，cursor／錯誤／meta 在同一個原子快照（D1 一個 batch），列在它之後讀，
+//     所以上面的順序保證仍然成立（同一快照內沒有「先後」問題），同時把 D1 往返從 5 次降到 1～2 次。
 import { emptyChanges, formatCookie, parseCookie } from '../protocol/pull'
 import type { PullQuery, PullResponse } from '../protocol/pull'
-import type { UserStore, VersionedRow } from './store'
+import type { RecordedError, UserStore, VersionedRow } from './store'
 import { PULL_PAGE_ROWS } from '../protocol/pull'
 
 export type PullOptions = {
@@ -16,11 +18,40 @@ export type PullOptions = {
   pageRows?: number | undefined
 }
 
+/** epoch 不同（備份還原／重新匯入）或 cookie 比伺服器還新：要從頭開始送。沒有 cookie（epoch 為 null）不算 reset。 */
+export function needsReset(epoch: string | null, version: number, meta: { epoch: string; version: number }): boolean {
+  return epoch !== null && (epoch !== meta.epoch || version > meta.version)
+}
+
 export async function pull(store: UserStore, query: PullQuery, opts: PullOptions): Promise<PullResponse> {
   const limit = opts.pageRows ?? PULL_PAGE_ROWS
-  // 1. cursor 與錯誤（錯誤在 cursor 之後讀，才不會漏掉 <= cursor 的；之後才提交的 > cursor 的不回，因為還沒「宣稱」它）。
-  const lastMutationId = await store.getLastMutationId(query.clientId)
-  const errors = (await store.listErrors(query.clientId, query.afterMutationId))
+  const cookie = parseCookie(query.cookie)
+  let lastMutationId: number
+  let recorded: RecordedError[]
+  let meta: { epoch: string; version: number }
+  let fetched: VersionedRow[]
+  let after: number
+  let reset: boolean
+  if (store.pullSnapshot) {
+    // 快速路徑（D1：往返次數從 5 降到 1～2，見 UserStore.pullSnapshot）。cursor／錯誤／meta 同一個快照，列在它們之後。
+    const snap = await store.pullSnapshot({ clientId: query.clientId, afterMutationId: query.afterMutationId, epoch: cookie.epoch, afterVersion: cookie.version, limit: limit + 1 })
+    lastMutationId = snap.lastMutationId
+    recorded = snap.errors
+    meta = snap.meta
+    reset = snap.reset // store 已經算過一次（needsReset），這裡不重算
+    after = reset ? 0 : cookie.version
+    fetched = reset || snap.rows === null ? await store.rowsAfter(after, limit + 1) : snap.rows
+  } else {
+    // 1. cursor 與錯誤（錯誤在 cursor 之後讀，才不會漏掉 <= cursor 的；之後才提交的 > cursor 的不回，因為還沒「宣稱」它）。
+    lastMutationId = await store.getLastMutationId(query.clientId)
+    recorded = await store.listErrors(query.clientId, query.afterMutationId)
+    // 2. meta，3. 列：版本號按提交順序遞增，meta.version 以內的列一定已經提交。
+    meta = await store.readMeta()
+    reset = needsReset(cookie.epoch, cookie.version, meta)
+    after = reset ? 0 : cookie.version
+    fetched = await store.rowsAfter(after, limit + 1)
+  }
+  const errors = recorded
     .filter((e) => e.mutationId <= lastMutationId)
     .map((e) => ({
       mutationId: e.mutationId,
@@ -30,13 +61,7 @@ export async function pull(store: UserStore, query: PullQuery, opts: PullOptions
       ...(e.details ? { details: e.details } : {}),
       at: e.at,
     }))
-  // 2. meta，3. 列：版本號按提交順序遞增，meta.version 以內的列一定已經提交。
-  const meta = await store.readMeta()
-  const cookie = parseCookie(query.cookie)
-  const reset = cookie.epoch !== null && (cookie.epoch !== meta.epoch || cookie.version > meta.version)
-  const after = reset ? 0 : cookie.version
 
-  const fetched = await store.rowsAfter(after, limit + 1)
   let page: VersionedRow[]
   let more: boolean
   let nextVersion: number

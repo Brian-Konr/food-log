@@ -1,10 +1,12 @@
 # v2 階段 0 Spike 報告
 
+> **這份是階段 0 的歷史紀錄**（spike Worker `food-log-spike`，從 `spike/v2-auth-sync` 部署，附自己的 `apps/spike` 頁面）。下面的做法、數字與「待測」項目都維持當時的樣子。**在 `v2` 分支上，`pnpm run deploy` 只部署 API（沒有靜態檔、沒有前端）**；前端要等階段 2 完成後用 `pnpm run deploy:with-app` 一起部署（見 [`v2.md`](v2.md) 第 0 節與 `workers/api/wrangler.jsonc`）。下文提到的 `pnpm --filter @food-log/api run deploy`（會 build `apps/spike`）只適用於 spike 分支。
+
 | 項目 | 內容 |
 |---|---|
 | 分支 | `spike/v2-auth-sync`（拋棄式；從含 `docs/plans/v2.md` 的 `main` 開出） |
 | 對應 | [`v2.md`](v2.md) 第 4 節「階段 0」、[`backend-v2-PRD.md`](../architecture/backend-v2-PRD.md) §5.2、§7.1 |
-| 狀態 | 程式與自動化測試完成；**⛔ iPhone 真機清單尚未跑**（第 7 節）。出口條件「passkey 在主畫面 PWA 可用」要等 Brian 的結果 |
+| 狀態 | 程式、自動化測試與 iPhone 真機清單（第 7 節，2026-10-15）完成；**4a（24 小時後）、4b（7 天後）待測**：2026-10-16 23:30、2026-10-22 23:30 之後。**在 4b 結果出來前，不可以刪除 spike Worker `food-log-spike` 與 D1 `food-log-spike`（第 7 節第 9 項）** |
 | 沒有做 | 沒有部署、沒有碰真實 Cloudflare、沒有打真實 `/exec`；`app/`（v1）和 `docs/architecture/` 完全沒動 |
 
 ## 1. 做了什麼
@@ -136,9 +138,9 @@ pnpm -r typecheck && pnpm -r test          # 先確認你的機器上也全過
    pnpm --filter @food-log/api exec wrangler secret put BETTER_AUTH_SECRET        # 貼上面的值
    pnpm --filter @food-log/api exec wrangler secret put ALLOWED_EMAILS            # 你的 email（多個用逗號）
    ```
-5. ⛔ **部署，然後設定 `APP_ORIGIN`（必填）**。**`pnpm run deploy` 預設只部署 API（沒有 static assets）**：`apps/food-log` 目前還是 v1（`src/api/gas.ts` 連 Apps Script），不能被發佈到這個 Worker。要連前端一起部署用 `pnpm --filter @food-log/api run deploy:with-app`，它在 `apps/food-log/src/api/gas.ts` 還存在時直接拒絕（階段 2 改接 `/sync` 並刪掉該檔之後才會放行）。Worker 在 localhost 以外沒有 `APP_ORIGIN` 就會對 `/api/auth/*`、`/sync/*` 回 500 `APP_ORIGIN not configured`（fail closed，不會從 Host 推導），所以要部署兩次：
+5. ⛔ **部署，然後設定 `APP_ORIGIN`（必填）**。Worker 在 localhost 以外沒有 `APP_ORIGIN` 就會對 `/api/auth/*`、`/sync/*` 回 500 `APP_ORIGIN not configured`（fail closed，不會從 Host 推導），所以要部署兩次：
    ```sh
-   pnpm --filter @food-log/api run deploy      # 第一次：typecheck + test + 遠端 migration + wrangler deploy。只部署 API，不帶任何前端；輸出 https://food-log-spike.<你的子網域>.workers.dev
+   pnpm --filter @food-log/api run deploy      # 第一次：會先 build apps/spike 再 wrangler deploy；輸出 https://food-log-spike.<你的子網域>.workers.dev
    ```
    把輸出的網址（只要 origin，不含路徑）填進 `workers/api/wrangler.jsonc` 的 `vars`（不是機密，可以進 git；子網域已註冊後也可在第一次部署前就填好）：
    ```jsonc
@@ -156,16 +158,16 @@ pnpm -r typecheck && pnpm -r test          # 先確認你的機器上也全過
    node scripts/login-code.ts      --email <你的 email> --remote
    ```
    登入碼從「印出的指令執行」那一刻起 15 分鐘有效、只能用一次。要再登入就重跑 `login-code.ts`。
-7. ⛔ **iPhone 清單**（plan §4 階段 0 第 7 項）。**需要有前端才能做：API-only 部署沒有頁面可開，這一項順延到階段 2 的 app 改接 `/sync`、並用 `deploy:with-app` 部署之後。**（API 本身可先用 `curl` 驗證 401／`/api/health`。）有前端之後，先用 Safari 開上面的網址 →「加入主畫面」，之後**只從主畫面圖示開**，在主畫面 App 裡登入（Safari 與主畫面 App 的儲存空間是分開的）。把結果填在下面的表。
+7. ⛔ **iPhone 清單**（plan §4 階段 0 第 7 項）。先用 Safari 開上面的網址 →「加入主畫面」，之後**只從主畫面圖示開**，在主畫面 App 裡登入（Safari 與主畫面 App 的儲存空間是分開的）。把結果填在下面的表。
 
    | # | 項目 | 結果 | 備註 |
    |---|---|---|---|
-   | 1 | 用登入碼登入主畫面 PWA，按「註冊 passkey」成功 | | |
-   | 2 | 強制關閉 App 後重開，仍在登入狀態 | | |
-   | 3 | 按「登出」，再按「用 passkey 登入」成功 | | |
-   | 4a | 24 小時後打開，仍在登入狀態？ | | 時間： |
-   | 4b | 7 天後打開，仍在登入狀態？ | | 時間： |
-   | 5 | 飛航模式下記 3 筆（**日期欄選 3 個不同的日子**）→ 強制關閉 App → 重開 → 關飛航模式 → 電腦上剛好 3 筆 | | 驗證：`pnpm --filter @food-log/api exec wrangler d1 execute food-log-spike --remote --command "SELECT day, kg, deleted_at FROM weights ORDER BY day"` |
+   | 1 | 用登入碼登入主畫面 PWA，按「註冊 passkey」成功 | ✅ 2026-10-15 | Face ID 跳出，註冊成功 |
+   | 2 | 強制關閉 App 後重開，仍在登入狀態 | ✅ 2026-10-15 | 不需要再輸入登入碼 |
+   | 3 | 按「登出」，再按「用 passkey 登入」成功 | ✅ 2026-10-15 | Face ID 登入成功 |
+   | 4a | 24 小時後打開，仍在登入狀態？ | 待測 | 時間：2026-10-16 23:30 之後 |
+   | 4b | 7 天後打開，仍在登入狀態？ | 待測 | 時間：2026-10-22 23:30 之後 |
+   | 5 | 飛航模式下記 3 筆（**日期欄選 3 個不同的日子**）→ 強制關閉 App → 重開 → 關飛航模式 → 電腦上剛好 3 筆 | ✅ 2026-10-15 | 驗證：`pnpm --filter @food-log/api exec wrangler d1 execute food-log-spike --remote --command "SELECT day, kg, deleted_at FROM weights ORDER BY day"` |
 
    passkey 在主畫面 PWA 失敗（1 或 3）→ 依計畫把一次性登入碼升為主要方式（階段 1 設計會改，不影響 `core`／同步）。第 4 項若 session 被清掉，記下是 24 小時還是 7 天（Safari 對網站資料的清除規則），這決定登入碼要多常用。
 8. ⛔（建議）**量真實 CPU**。另開一個終端機：
@@ -182,13 +184,17 @@ pnpm -r typecheck && pnpm -r test          # 先確認你的機器上也全過
 
    | 事件 | cpuTime | wallTime |
    |---|---|---|
-   | 冷啟動第一個請求 | | |
-   | pull 一頁 2,000 列（×5） | | |
-   | passkey `verify-authentication` | | |
-   | 10 筆 push | | |
+   | 冷啟動第一個請求 | 28 ms（之後其他新 isolate：33、18 ms） | 28 ms |
+   | `/sync/pull` 熱（auth 實例已建好，401） | 0–1 ms | 1–2 ms |
+   | `/api/health`（不建 Better Auth） | 冷 2–4 ms、熱 0 ms | 0–4 ms |
+   | pull 一頁 2,000 列（×5） | 10、9、7、7、6 ms（貼著 10 ms；需要餘裕時把頁大小降到 1,000） | 454–939 ms |
+   | passkey `verify-authentication` | 23 ms（generate-options 9 ms；sign-out 18 ms 疑似新 isolate） | 867 ms |
+   | `/sync/pull`（少量資料，iPhone 實際請求） | 4 ms | 418–427 ms（4 次 D1 讀取依序來回；階段 1 改成一個 `db.batch`） |
+   | 10 筆 push | 略過（2026-10-15；本機量過 41 次 D1 呼叫 < 50，真實環境未驗） | — |
 
    跑完用 `DELETE FROM weights;` 清掉合成資料。
-9. ⛔ **結束後清掉**：
+9. ⛔ **結束後清掉**。**4b（2026-10-22 23:30 之後的 7 天 session 測試）出結果之前不要執行這一步**：spike Worker／D1 刪掉，4a／4b 就沒有東西可以測了。
+
    ```sh
    pnpm --filter @food-log/api exec wrangler delete food-log-spike
    pnpm --filter @food-log/api exec wrangler d1 delete food-log-spike
@@ -199,7 +205,7 @@ pnpm -r typecheck && pnpm -r test          # 先確認你的機器上也全過
 
 | 條件 | 狀態 |
 |---|---|
-| passkey 在主畫面 PWA 可用（否則登入碼升為主要方式） | ⛔ 待第 7 節第 1–4 項。自動化：Better Auth + passkey + D1 全流程在測試與 Chrome 虛擬 authenticator 通過 |
+| passkey 在主畫面 PWA 可用（否則登入碼升為主要方式） | ✅ 2026-10-15 iPhone 主畫面 PWA 實測：登入碼登入、註冊 passkey、重開仍登入、登出後 passkey 登入、離線 3 筆同步全部通過。session 保存（第 4a／4b 項）待 24 小時與 7 天後確認 |
 | CAS 做法成立 | ✅ D1 batch + guard + 部分唯一索引，並行測試與回滾測試通過；退路（SQLite DO）暫不需要 |
-| CPU 在限制內 | ⚠️ 本機牆鐘遠低於限制，真實 CPU 待第 7 節第 8 項 |
+| CPU 在限制內 | ⚠️ 2026-10-15 `wrangler tail` 實測：熱請求 0–1 ms；但每個新 isolate 第一次建立 Better Auth 要 18–33 ms CPU（超過免費方案 10 ms，目前 outcome 仍是 ok，有偶發 1102 風險）。階段 1 要把 `betterAuth()` 移到 global scope（`import { env } from "cloudflare:workers"`），讓它算在 Worker 啟動時間而不是請求 CPU；改了仍超過才升級 $5 |
 | Better Auth 版本已鎖定 | ✅ 1.7.10 + `@better-auth/passkey` 1.7.10 |

@@ -144,6 +144,6 @@ describe('GET /api/health', () => {
   it('is public and cheap', async () => {
     const res = await call('/api/health')
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, clientVersion: 1 })
+    expect(await res.json()).toEqual({ ok: true, clientVersion: 1, authPrewarm: 'ok' })
   })
 })

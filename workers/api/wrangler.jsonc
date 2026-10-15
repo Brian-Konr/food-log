@@ -39,16 +39,22 @@
   // 2 of the free plan's 5 cron triggers.
   "triggers": { "crons": ["0 20 * * *", "*/5 20 * * *"] },
 
+  // Only the workers.dev host serves the Worker: preview URLs have other hostnames, where APP_ORIGIN / passkeys cannot work.
+  // (Same shape as the phase-0 spike, which ran on food-log-spike.brian-konr.workers.dev.)
+  "workers_dev": true,
+  "preview_urls": false,
+
   "vars": {
     // reject push from clients older than this with 409 client_too_old (rollback: set 9999)
     "MIN_CLIENT_VERSION": "1",
     // rows one export invocation processes before leaving the rest to the next 5-minute resume tick (one chunk = 1000 rows)
     "EXPORT_ROW_BUDGET": "3000",
-    // ⛔ Brian: APP_ORIGIN is MANDATORY once deployed. The Worker answers 500 'APP_ORIGIN not configured' on
-    // /api/auth/*, /sync/* and /bot/* without it; only localhost may omit it. It is the passkey origin
-    // (the RP ID is its hostname). After the first deploy prints https://food-log.<your-subdomain>.workers.dev,
-    // replace the empty value below with that origin and deploy again. Not a secret. Keep it empty for `wrangler dev --local`.
-    "APP_ORIGIN": ""
+    // The passkey origin (the RP ID is its hostname: food-log.brian-konr.workers.dev). Not a secret. MANDATORY once deployed: the Worker
+    // answers 500 'APP_ORIGIN not configured' on /api/auth/*, /sync/* and /bot/* without it; only localhost may omit it.
+    // It is also what lets Better Auth be built at Worker startup (src/auth.ts) instead of on the first request.
+    // For `wrangler dev --local`, override it with an empty value in workers/api/.dev.vars (APP_ORIGIN=) so local auth derives
+    // the localhost origin from the request instead.
+    "APP_ORIGIN": "https://food-log.brian-konr.workers.dev"
   }
 
   // Secrets (never in git; set with `wrangler secret put <NAME>`):

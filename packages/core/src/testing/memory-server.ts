@@ -9,9 +9,9 @@ import { TABLES } from '../schema/rows'
 import type { Table } from '../schema/rows'
 import { processPush } from '../server/process-push'
 import type { ProcessPushOptions } from '../server/process-push'
-import { pull } from '../server/pull'
+import { needsReset, pull } from '../server/pull'
 import { MUTATION_OUTCOME_RETENTION } from '../server/store'
-import type { CommitInput, MutationOutcome, RecordedError, ServerStore, ServerTx, UserStore, VersionedRow } from '../server/store'
+import type { CommitInput, MutationOutcome, PullSnapshot, PullSnapshotInput, RecordedError, ServerStore, ServerTx, UserStore, VersionedRow } from '../server/store'
 import { MemoryDb, MemoryTx } from './memory-tx'
 import type { MemoryMeta } from './memory-tx'
 
@@ -19,7 +19,7 @@ import type { MemoryMeta } from './memory-tx'
 export const TEST_NOW = Date.parse('2026-10-12T12:00:00+08:00')
 
 /** 讀取的種類（給 MemoryServer.afterRead 鉤子用）。 */
-export type ReadOp = 'getLastMutationId' | 'listErrors' | 'readMeta' | 'rowsAfter' | 'rowsAtVersion' | 'getMutationOutcome'
+export type ReadOp = 'getLastMutationId' | 'listErrors' | 'readMeta' | 'rowsAfter' | 'rowsAtVersion' | 'getMutationOutcome' | 'pullSnapshot'
 
 class MemoryServerTx implements ServerTx {
   readonly tx: MemoryTx
@@ -124,6 +124,25 @@ class MemoryUserStore implements UserStore {
       this.db.errors.filter((e) => e.clientId === clientId && e.mutationId > afterMutationId).sort((a, b) => a.mutationId - b.mutationId),
     )
   }
+
+  /** 選用的快速路徑（和 D1 版同一個契約）。預設關閉，開關是 MemoryServer.snapshotPull：測試兩條路徑都要走。 */
+  get pullSnapshot(): ((input: PullSnapshotInput) => Promise<PullSnapshot>) | undefined {
+    return this.server.snapshotPull ? (input) => this.snapshot(input) : undefined
+  }
+
+  private snapshot(input: PullSnapshotInput): Promise<PullSnapshot> {
+    // 同步讀完 cursor／錯誤／meta／列（一個原子快照），之後才呼叫鉤子。
+    const meta = { epoch: this.db.epoch, version: this.db.version }
+    const reset = needsReset(input.epoch, input.afterVersion, meta)
+    const out: PullSnapshot = {
+      lastMutationId: this.db.clients.get(input.clientId) ?? 0,
+      errors: this.db.errors.filter((e) => e.clientId === input.clientId && e.mutationId > input.afterMutationId).sort((a, b) => a.mutationId - b.mutationId),
+      meta,
+      reset,
+      rows: reset ? null : this.collect((v) => v > input.afterVersion).slice(0, input.limit),
+    }
+    return this.read('pullSnapshot', () => out)
+  }
 }
 
 /**
@@ -137,6 +156,8 @@ export class MemoryServer implements ServerStore {
   now: () => number = () => TEST_NOW
   minClientVersion = CLIENT_VERSION
   pageRows: number | undefined
+  /** true：UserStore 提供 pullSnapshot（pull 的快速路徑）；預設 false（逐一讀取）。 */
+  snapshotPull = false
   /** 測試鉤子：commit 的 CAS 比對之前呼叫，可以在這裡插入別的寫入來製造並行衝突。 */
   beforeCommit: (() => void | Promise<void>) | undefined
   /** 測試鉤子：每次讀取完成之後呼叫（讀的結果已經定下來），可以在這裡讓別的 push 提交，驗證 pull 的讀取順序。 */

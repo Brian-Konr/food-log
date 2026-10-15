@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { formatCookie, parseCookie } from '../src/protocol/pull'
+import { PULL_PAGE_ROWS, formatCookie, parseCookie } from '../src/protocol/pull'
 import type { PullResponse } from '../src/protocol/pull'
 import { addDays } from '../src/time'
 import { itemArgs, logArgs, noonOf, storeArgs, TEST_TODAY, weightArgs } from '../src/testing'
@@ -95,12 +95,27 @@ describe('分頁', () => {
     expect(pages.at(-1)!.more).toBe(false)
   })
 
-  test('預設一頁 2,000 列', async () => {
+  test('預設一頁 1,000 列（真機實測 2,000 列貼著 10 ms CPU 上限）', async () => {
+    expect(PULL_PAGE_ROWS).toBe(1000)
     const s = newServer()
     await seedWeights(s, 5)
     const p = await s.pull({ clientId: 'c' })
     expect(p.more).toBe(false)
     expect(p.changes.weights).toHaveLength(5)
+    // 超過一頁：直接寫進記憶體資料庫（每列一個版本），不必送 1,001 筆 mutation。
+    const big = newServer()
+    for (let i = 1; i <= 1001; i++) {
+      const day = addDays(TEST_TODAY, -i)
+      big.db.tables.weights.set(`w${i}`, { id: `w${i}`, user_id: 'u1', day, ts: noonOf(day, '08:00'), kg: 70, version: i, deleted_at: null, updated_at: 'x' } as never)
+    }
+    big.db.version = 1001
+    const first = await big.pull({ clientId: 'c' })
+    expect(first.changes.weights).toHaveLength(1000)
+    expect(first.more).toBe(true)
+    expect(first.cookie).toBe(formatCookie('e1', 1000))
+    const second = await big.pull({ clientId: 'c', cookie: first.cookie })
+    expect(second.changes.weights.map((w) => w.id)).toEqual(['w1001'])
+    expect(second.more).toBe(false)
   })
 })
 
