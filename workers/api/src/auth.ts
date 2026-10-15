@@ -152,8 +152,10 @@ export type BotKeyCheck =
 /**
  * Verify a Kyujin Bearer key. Missing / unknown / revoked / disabled / expired -> 401 unauthorized.
  * A valid key whose metadata.actor is not kyujin, or that lacks the needed scope, -> 403 forbidden.
+ * The key owner's email is re-checked against ALLOWED_EMAILS on every request (one indexed D1 read, nothing cached across
+ * requests): removing an address from the secret locks its keys out immediately, and a key row inserted for a stranger is useless.
  */
-export async function verifyBotKey(auth: Auth, key: string | null, need: 'read' | 'write'): Promise<BotKeyCheck> {
+export async function verifyBotKey(auth: Auth, env: Pick<Env, 'DB' | 'ALLOWED_EMAILS'>, key: string | null, need: 'read' | 'write'): Promise<BotKeyCheck> {
   const unauthorized = { ok: false, status: 401, error: 'unauthorized' } as const
   if (!key) return unauthorized
   let res: Awaited<ReturnType<Auth['api']['verifyApiKey']>>
@@ -163,6 +165,8 @@ export async function verifyBotKey(auth: Auth, key: string | null, need: 'read' 
     return unauthorized
   }
   if (!res.valid || !res.key) return unauthorized
+  const owner = await env.DB.prepare(`SELECT email FROM user WHERE id = ?`).bind(res.key.referenceId).first<{ email: string }>()
+  if (!owner || !allowedEmails(env).has(owner.email.toLowerCase())) return unauthorized
   const meta = res.key.metadata as { actor?: unknown } | null
   if (!meta || meta.actor !== BOT_METADATA.actor) return { ok: false, status: 403, error: 'forbidden' }
   const granted = (res.key.permissions as Record<string, string[]> | null)?.foodlog ?? []

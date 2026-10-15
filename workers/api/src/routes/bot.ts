@@ -18,6 +18,7 @@ import {
   configRowSchema,
   storeRowSchema,
   summarizeDay,
+  taipeiIso,
   taipeiToday,
   weekSummary,
   weekStart as weekStartOf,
@@ -64,7 +65,7 @@ const readRoute = createRoute({
     200: json(
       z.object({
         ok: z.literal(true),
-        serverTime: z.string(),
+        serverTime: z.string().describe('Server time as Taipei ISO, YYYY-MM-DDTHH:MM:SS+08:00 (same as v1)'),
         config: configOut,
         items: z.array(itemOut),
         stores: z.array(storeOut),
@@ -197,7 +198,7 @@ botRoutes.use('*', async (c, next) => {
   const auth = authFor(c.env, c.req.url)
   if (!auth) return c.json({ ok: false, error: 'misconfigured', message: NO_ORIGIN.error }, 500)
   const need = c.req.method === 'POST' ? 'write' : 'read'
-  const check = await verifyBotKey(auth, bearerOf(c.req.header('Authorization')), need)
+  const check = await verifyBotKey(auth, c.env, bearerOf(c.req.header('Authorization')), need)
   if (!check.ok) {
     const message = check.error === 'unauthorized' ? 'missing, unknown, revoked or expired API key' : 'this key may not do that'
     return c.json({ ok: false, error: check.error, message }, check.status)
@@ -226,7 +227,7 @@ botRoutes.openapi(readRoute, async (c) => {
   return c.json(
     {
       ok: true as const,
-      serverTime: new Date().toISOString(),
+      serverTime: taipeiIso(Date.now()),
       config: strip(config ?? defaultConfigRow(c.get('userId'))),
       items: items.map(strip),
       stores: stores.map(strip),

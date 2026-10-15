@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { app } from '../src/index.ts'
 import type { Env } from '../src/env.ts'
-import { ORIGIN, call, login, mintBotKey, resetDb } from './helpers.ts'
+import { ORIGIN, call, login, mintBotKey, resetDb, seedUser } from './helpers.ts'
 
 let userId: string
 let cookie: string
@@ -114,6 +114,35 @@ describe('403 forbidden (valid key, not allowed)', () => {
     expect((await read((await mintBotKey(userId, { permissions: { other: ['read'] } })).key)).status).toBe(403)
     expect((await read((await mintBotKey(userId, { metadata: {} })).key)).status).toBe(403)
     expect((await read((await mintBotKey(userId, { metadata: { actor: 'app' } })).key)).status).toBe(403)
+  })
+})
+
+describe('key owner must still be on ALLOWED_EMAILS', () => {
+  const asEnv = (key: string, over: Partial<Env>) =>
+    app.fetch(new Request(ORIGIN + '/bot/v1/read', { headers: { Authorization: 'Bearer ' + key } }), { ...(env as unknown as Env), ...over })
+
+  it('a valid key whose owner email is not allowed is a 401 (read and mutate)', async () => {
+    const stranger = await seedUser('stranger@example.com')
+    const { key } = await mintBotKey(stranger)
+    const res = await read(key)
+    expect(res.status).toBe(401)
+    expect(await res.json()).toMatchObject({ ok: false, error: 'unauthorized' })
+    const mutate = await call('/bot/v1/mutate', { method: 'POST', bearer: key, json: { name: 'weights.upsert@1', args: {} } })
+    expect(mutate.status).toBe(401)
+  })
+
+  it('removing the owner from ALLOWED_EMAILS locks the key out at once; adding back (any case) restores it', async () => {
+    const { key } = await mintBotKey(userId)
+    expect((await asEnv(key, {})).status).toBe(200)
+    expect((await asEnv(key, { ALLOWED_EMAILS: 'second@example.com' })).status).toBe(401)
+    expect((await asEnv(key, { ALLOWED_EMAILS: '' })).status).toBe(401)
+    expect((await asEnv(key, { ALLOWED_EMAILS: ' OWNER@example.com ' })).status).toBe(200)
+  })
+
+  it('a key whose owner user row is gone is a 401', async () => {
+    const { key } = await mintBotKey(userId)
+    await env.DB.prepare(`DELETE FROM user WHERE id = ?`).bind(userId).run()
+    expect((await read(key)).status).toBe(401)
   })
 })
 

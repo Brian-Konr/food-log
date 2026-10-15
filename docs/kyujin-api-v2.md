@@ -63,7 +63,7 @@ KEY="$FOODLOG_API_KEY"
 curl -sS "$BASE/read" -H "Authorization: Bearer $KEY"
 ```
 
-回 `ok`、`serverTime`、`config`、`items`、`stores`、`logs`、`weights`、`logDays`（35）、`weightDays`（90）。Items、Stores、Config 全給（含已刪除，`deleted_at` 不是 `null` 的就是已刪除）；Logs 往回 35 天（含今天）；Weights 往回 90 天。更早的用 `history`。
+回 `ok`、`serverTime`（台北時間 ISO，`YYYY-MM-DDTHH:MM:SS+08:00`，跟 v1 一樣）、`config`、`items`、`stores`、`logs`、`weights`、`logDays`（35）、`weightDays`（90）。Items、Stores、Config 全給（含已刪除，`deleted_at` 不是 `null` 的就是已刪除）；Logs 往回 35 天（含今天）；Weights 往回 90 天。更早的用 `history`。
 
 `config` 是有型別的物件（見下方欄位對照），沒有設定過時回預設值（2000 kcal / 150 g / 60 g / 200 g）。
 
