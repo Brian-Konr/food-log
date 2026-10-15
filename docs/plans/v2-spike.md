@@ -136,9 +136,9 @@ pnpm -r typecheck && pnpm -r test          # 先確認你的機器上也全過
    pnpm --filter @food-log/api exec wrangler secret put BETTER_AUTH_SECRET        # 貼上面的值
    pnpm --filter @food-log/api exec wrangler secret put ALLOWED_EMAILS            # 你的 email（多個用逗號）
    ```
-5. ⛔ **部署，然後設定 `APP_ORIGIN`（必填）**。Worker 在 localhost 以外沒有 `APP_ORIGIN` 就會對 `/api/auth/*`、`/sync/*` 回 500 `APP_ORIGIN not configured`（fail closed，不會從 Host 推導），所以要部署兩次：
+5. ⛔ **部署，然後設定 `APP_ORIGIN`（必填）**。**`pnpm run deploy` 預設只部署 API（沒有 static assets）**：`apps/food-log` 目前還是 v1（`src/api/gas.ts` 連 Apps Script），不能被發佈到這個 Worker。要連前端一起部署用 `pnpm --filter @food-log/api run deploy:with-app`，它在 `apps/food-log/src/api/gas.ts` 還存在時直接拒絕（階段 2 改接 `/sync` 並刪掉該檔之後才會放行）。Worker 在 localhost 以外沒有 `APP_ORIGIN` 就會對 `/api/auth/*`、`/sync/*` 回 500 `APP_ORIGIN not configured`（fail closed，不會從 Host 推導），所以要部署兩次：
    ```sh
-   pnpm --filter @food-log/api run deploy      # 第一次：會先 build apps/spike 再 wrangler deploy；輸出 https://food-log-spike.<你的子網域>.workers.dev
+   pnpm --filter @food-log/api run deploy      # 第一次：typecheck + test + 遠端 migration + wrangler deploy。只部署 API，不帶任何前端；輸出 https://food-log-spike.<你的子網域>.workers.dev
    ```
    把輸出的網址（只要 origin，不含路徑）填進 `workers/api/wrangler.jsonc` 的 `vars`（不是機密，可以進 git；子網域已註冊後也可在第一次部署前就填好）：
    ```jsonc
@@ -156,7 +156,7 @@ pnpm -r typecheck && pnpm -r test          # 先確認你的機器上也全過
    node scripts/login-code.ts      --email <你的 email> --remote
    ```
    登入碼從「印出的指令執行」那一刻起 15 分鐘有效、只能用一次。要再登入就重跑 `login-code.ts`。
-7. ⛔ **iPhone 清單**（plan §4 階段 0 第 7 項）。先用 Safari 開上面的網址 →「加入主畫面」，之後**只從主畫面圖示開**，在主畫面 App 裡登入（Safari 與主畫面 App 的儲存空間是分開的）。把結果填在下面的表。
+7. ⛔ **iPhone 清單**（plan §4 階段 0 第 7 項）。**需要有前端才能做：API-only 部署沒有頁面可開，這一項順延到階段 2 的 app 改接 `/sync`、並用 `deploy:with-app` 部署之後。**（API 本身可先用 `curl` 驗證 401／`/api/health`。）有前端之後，先用 Safari 開上面的網址 →「加入主畫面」，之後**只從主畫面圖示開**，在主畫面 App 裡登入（Safari 與主畫面 App 的儲存空間是分開的）。把結果填在下面的表。
 
    | # | 項目 | 結果 | 備註 |
    |---|---|---|---|

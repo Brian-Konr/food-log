@@ -2,8 +2,8 @@ export interface Env {
   DB: D1Database
   /** R2 bucket for the daily export (exports/YYYY-MM-DD/…). */
   EXPORTS: R2Bucket
-  /** Static assets (apps/food-log/dist). Not bound in the vitest config. */
-  ASSETS: Fetcher
+  /** Static assets (apps/food-log/dist). Only bound by `deploy:with-app`; absent in the default API-only deploy and in tests. */
+  ASSETS?: Fetcher
   /** secret: `wrangler secret put BETTER_AUTH_SECRET` */
   BETTER_AUTH_SECRET: string
   /** secret: comma separated allow list. `wrangler secret put ALLOWED_EMAILS`. Never in git. */
