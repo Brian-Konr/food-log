@@ -83,7 +83,7 @@ describe('版本號與結果', () => {
     const before = await s.getLastMutationId(owner)
     await s.mutate('logs.update@1', { id: 'l1', patch: { qty: 2 } }) // ignored
     await s.mutate('logs.add@1', { log: logArgs({ id: 'l1' }) }) // duplicate
-    await s.mutate('logs.delete@1', { id: 'nope' }) // not_found
+    await s.mutate('logs.restore@1', { id: 'nope' }) // not_found
     await s.mutateRaw('nope.nope@1', {}) // 未知名稱
     expect(s.db.version).toBe(v)
     expect(await s.getLastMutationId(owner)).toBe(before + 4)

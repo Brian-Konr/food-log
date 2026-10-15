@@ -114,3 +114,17 @@ test('last_eaten_at 不是 stores.upsert 的參數（傳了也被忽略）；改
   expect(row(s, 'stores', 's:1').last_eaten_at).toBe(noonOf(TEST_YESTERDAY, '19:00'))
   expect(live(s, 'stores')).toHaveLength(1)
 })
+
+test('stores.delete：不存在 → ignored:missing、已刪除再刪 → ignored:deleted；都不寫入、不連帶動品項（v1.1.4）', async () => {
+  const s = newServer()
+  const v0 = s.db.version
+  expect(expectOk(await s.mutate('stores.delete@1', { id: 's:nope' }))).toEqual({ ignored: 'missing' })
+  expect(s.db.version).toBe(v0)
+  await s.mutate('stores.upsert@1', store)
+  await s.mutate('items.upsert@1', beefItem)
+  await s.mutate('stores.delete@1', { id: 's:1' })
+  const v = s.db.version
+  expect(expectOk(await s.mutate('stores.delete@1', { id: 's:1' }))).toEqual({ ignored: 'deleted' })
+  expect(s.db.version).toBe(v)
+  expectErr(await s.mutate('stores.restore@1', { id: 's:nope' }), 'not_found')
+})

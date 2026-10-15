@@ -57,7 +57,10 @@ test('logs.delete／restore：undo 是反向 mutation；重複送是 ignored', a
   expectOk(await s.mutate('logs.restore@1', { id: 'a' }))
   expect(row(s, 'logs', 'a').deleted_at).toBeNull()
   expect(expectOk(await s.mutate('logs.restore@1', { id: 'a' }))).toEqual({ ignored: 'not_deleted' })
-  expectErr(await s.mutate('logs.delete@1', { id: 'nope' }), 'not_found')
+  // v1.1.4：刪除不存在的列回成功（ignored:'missing'），不寫入、不產生 not_found；復原不存在的列仍是 not_found。
+  const v = s.db.version
+  expect(expectOk(await s.mutate('logs.delete@1', { id: 'nope' }))).toEqual({ ignored: 'missing' })
+  expect(s.db.version).toBe(v)
   expectErr(await s.mutate('logs.restore@1', { id: 'nope' }), 'not_found')
 })
 
@@ -71,4 +74,18 @@ test('刪除後再用同 id 重送 logs.add 仍是 duplicate（不會復活）',
 
 test('日期常數', () => {
   expect(noonOf(TEST_YESTERDAY)).toBe('2026-10-11T12:00:00+08:00')
+})
+
+test('logs.delete 的 owner／Kyujin 差異：owner 刪不存在或已刪除都是 ignored；Kyujin 不存在或不是自己的 → forbidden', async () => {
+  const s = newServer()
+  const v0 = s.db.version
+  expect(expectOk(await s.mutate('logs.delete@1', { id: 'nope' }))).toEqual({ ignored: 'missing' })
+  expectErr(await s.asKyujin('logs.delete@1', { id: 'nope' }), 'forbidden')
+  await s.mutate('logs.add@1', { log: logArgs({ id: 'a' }) }) // app 的列
+  const v1 = s.db.version
+  expect(v1).toBe(v0 + 1)
+  expectErr(await s.asKyujin('logs.delete@1', { id: 'a' }), 'forbidden')
+  await s.mutate('logs.delete@1', { id: 'a' })
+  expectErr(await s.asKyujin('logs.delete@1', { id: 'a' }), 'forbidden') // 已刪除但不是 kyujin 的列，仍然 forbidden
+  expect(s.db.version).toBe(v1 + 1)
 })

@@ -45,7 +45,7 @@ export type StoresDeleteResult = RowResult | IgnoredResult
 export async function runStoresDelete(tx: Tx, ctx: Ctx, a: IdArgs): Promise<StoresDeleteResult> {
   if (!canDeleteOrRestoreStore(ctx.actor)) throw forbidden(KYU_MSG)
   const row = await tx.get('stores', a.id)
-  if (!row) throw notFound('找不到這筆紀錄：' + a.id)
+  if (!row) return { ignored: 'missing' } // v1.1.4：不存在也回成功，不寫入
   if (row.deleted_at !== null) return { ignored: 'deleted' }
   const items = await tx.itemsOfStore(a.id)
   const now = nowIso(ctx)

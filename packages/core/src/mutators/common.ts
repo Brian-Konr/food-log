@@ -7,8 +7,13 @@ import type { Tx } from '../tx'
 /** 和 legacy/gas/Code.gs 相同的訊息。 */
 export const NUT_MSG = '紀錄必須有熱量、蛋白質、脂肪、碳水'
 
-/** 成功結果：被忽略（列已被刪除；或要復原的列本來就沒被刪）。不產生寫入，伺服器版本號不變。 */
-export type IgnoredResult = { ignored: 'deleted' | 'not_deleted' }
+/**
+ * 成功結果：被忽略，不產生寫入，伺服器版本號不變。
+ *  - 'deleted'：列已被刪除（update／upsert／delete 重複）；
+ *  - 'not_deleted'：要復原的列本來就沒被刪；
+ *  - 'missing'：要刪除的列不存在（v1.1.4 的 softDelete_ 回 ok，不是 not_found）。
+ */
+export type IgnoredResult = { ignored: 'deleted' | 'not_deleted' | 'missing' }
 /** 成功結果：重複的 id（冪等重送）。不產生寫入。 */
 export type DuplicateResult = { duplicate: true }
 /** 成功結果：寫入了一列。 */

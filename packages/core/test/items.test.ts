@@ -67,10 +67,13 @@ test('created_by 建立後不變；v1 的 fav 欄位被忽略；ts 沒帶就用�
   expect(row(s, 'items', 'u:2').created_by).toBe('kyujin')
 })
 
-test('items.delete／restore：owner 可以；不存在 not_found；重複 ignored；Kyujin forbidden', async () => {
+test('items.delete／restore：owner 可以；不存在 ignored:missing；重複 ignored；Kyujin forbidden', async () => {
   const s = newServer()
   await s.mutate('items.upsert@1', itemArgs({ id: 'u:1' }))
-  expectErr(await s.mutate('items.delete@1', { id: 'u:nope' }), 'not_found')
+  const v0 = s.db.version
+  expect(expectOk(await s.mutate('items.delete@1', { id: 'u:nope' }))).toEqual({ ignored: 'missing' })
+  expect(s.db.version).toBe(v0)
+  expectErr(await s.mutate('items.restore@1', { id: 'u:nope' }), 'not_found')
   expectOk(await s.mutate('items.delete@1', { id: 'u:1' }))
   expect(row(s, 'items', 'u:1').deleted_at).not.toBeNull()
   expect(expectOk(await s.mutate('items.delete@1', { id: 'u:1' }))).toEqual({ ignored: 'deleted' })

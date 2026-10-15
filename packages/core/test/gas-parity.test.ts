@@ -6,12 +6,18 @@
 // 注意：這裡用相對路徑 import legacy/test/gas-fakes.ts。core 的測試在切換（legacy/ 刪除）之前可以依賴 legacy，
 // 切換後這個檔案連同 legacy/ 一起刪除；src/ 不得 import legacy。
 //
-// 刻意不比較（v2 有意的差異，見 packages/core/src/mutators 的註解）：
+// 刪除語意對齊 v1.1.4 的 softDelete_：owner 刪不存在、已刪除的列都回 ok 且不寫入（v2 回 ignored:'missing'／'deleted'，
+// v1 只回 {ok:true}，所以比對時 delete 步驟的 ignored 不比；改用 step.expect 另外斷言 v2 的值）；
+// Kyujin 刪 Logs 列不存在或不是 kyujin 的 → forbidden。復原的語意不變。
+//
+// 明確記載的有意差異清單（v2 與 Code.gs 不同之處，所以案例刻意避開或比對時正規化）：
 //   - created_by 不是參數（依 actor）：所以沒有「Kyujin 帶 created_by:'app' 建店／建品項 → forbidden」的案例；
 //   - v1 的 items.fav 不存在（改 favorites.set）；
 //   - 復原一個本來沒被刪的列：v1 回 ok 並改 updated_at，v2 回 ignored:'not_deleted'（比對時視為普通 ok）；
 //   - stores.restore 撞名回 duplicate_name、ts 必須是 +08:00、編輯一般紀錄會重驗 qty／grams（v1 沒檢查）；
-//   - logs.update 的 name 存去掉頭尾空白後的值（v1 驗證時 trim、寫入時卻寫原字串），所以案例的 name 不帶空白。
+//   - logs.update 的 name 存去掉頭尾空白後的值（v1 驗證時 trim、寫入時卻寫原字串；v2 有意改善），所以案例的 name 不帶空白；
+//     v2 對這點有專屬測試（test/logs.test.ts）；
+//   - delete／restore 的 ignored 旗標：v1 只回 {ok:true}，比對時忽略，v2 的值用 step.expect 斷言。
 import { describe, expect, test } from 'vitest'
 import { KYUJIN, OWNER } from '../src/actor'
 import type { Actor } from '../src/actor'
@@ -22,7 +28,7 @@ import { readyGas } from '../../../legacy/test/gas-fakes'
 
 type Rec = Record<string, unknown>
 type Who = 'owner' | 'kyujin'
-type Step = { label: string; who?: Who; v1: Rec | Rec[]; v2: [name: string, args: unknown] }
+type Step = { label: string; who?: Who; v1: Rec | Rec[]; v2: [name: string, args: unknown]; expect?: Rec }
 type Case = { name: string; steps: Step[] }
 type Outcome = { ok: boolean; error?: string; duplicate?: true; ignored?: string; overwritten?: true; existingId?: string }
 
@@ -57,8 +63,10 @@ const S = {
     v2: ['logs.add@1', { log: toLogArgs(rec), item: toItemArgs(item) }],
   }),
   update: (label: string, id: string, patch: Rec, who?: Who): Step => ({ label, who, v1: { action: 'update', table: 'Logs', id, patch }, v2: ['logs.update@1', { id, patch }] }),
-  del: (label: string, table: 'Logs' | 'Items' | 'Stores' | 'Weights', id: string, who?: Who): Step => ({
+  /** expect：v2 結果應該帶的 ignored（v1 只回 ok，不比；這裡另外斷言 v2）。 */
+  del: (label: string, table: 'Logs' | 'Items' | 'Stores' | 'Weights', id: string, who?: Who, expectIgnored?: 'missing' | 'deleted'): Step => ({
     label, who, v1: { action: 'softDelete', table, id }, v2: [`${table.toLowerCase()}.delete@1`, { id }],
+    ...(expectIgnored ? { expect: { ignored: expectIgnored } } : {}),
   }),
   restore: (label: string, table: 'Logs' | 'Items' | 'Stores' | 'Weights', id: string, who?: Who): Step => ({
     label, who, v1: { action: 'restore', table, id }, v2: [`${table.toLowerCase()}.restore@1`, { id }],
@@ -115,7 +123,7 @@ const CASES: Case[] = [
       S.restore('復原 w1 撞到 w3', 'Weights', 'w1'),
       S.del('刪 w3', 'Weights', 'w3'),
       S.restore('復原 w1', 'Weights', 'w1'),
-      S.del('刪不存在的', 'Weights', 'nope'),
+      S.del('刪不存在的 → ok（v1.1.4）', 'Weights', 'nope', undefined, 'missing'),
       S.restore('復原不存在的', 'Weights', 'nope'),
     ],
   },
@@ -156,7 +164,7 @@ const CASES: Case[] = [
       S.del('刪店', 'Stores', 's:1'),
       S.restore('復原店', 'Stores', 's:1'),
       S.del('再刪店', 'Stores', 's:1'),
-      S.del('刪不存在的店', 'Stores', 'nope'),
+      S.del('刪不存在的店 → ok', 'Stores', 'nope', undefined, 'missing'),
     ],
   },
   {
@@ -283,6 +291,46 @@ const CASES: Case[] = [
     ],
   },
 
+  // ===== 刪除語意（v1.1.4）：不存在、重複刪除都是 ok 且不寫入 =====
+  {
+    name: 'delete: ignored:missing／deleted — 四張表刪不存在的列、重複刪除都回 ok 且資料不變；復原不存在的仍是 not_found',
+    steps: [
+      S.append('記錄 l1', log('l1')),
+      S.item('品項 u:1', item('u:1')),
+      S.store('店 s:1', sto('s:1', '阿財')),
+      S.weight('體重 w1', w('w1', 72)),
+      S.del('Logs 不存在 → ok', 'Logs', 'nope', undefined, 'missing'),
+      S.del('Items 不存在 → ok', 'Items', 'nope', undefined, 'missing'),
+      S.del('Stores 不存在 → ok', 'Stores', 'nope', undefined, 'missing'),
+      S.del('Weights 不存在 → ok', 'Weights', 'nope', undefined, 'missing'),
+      S.del('刪 l1', 'Logs', 'l1'),
+      S.del('刪 u:1', 'Items', 'u:1'),
+      S.del('刪 s:1', 'Stores', 's:1'),
+      S.del('刪 w1', 'Weights', 'w1'),
+      S.del('Logs 重複刪 → ok', 'Logs', 'l1', undefined, 'deleted'),
+      S.del('Items 重複刪 → ok', 'Items', 'u:1', undefined, 'deleted'),
+      S.del('Stores 重複刪 → ok', 'Stores', 's:1', undefined, 'deleted'),
+      S.del('Weights 重複刪 → ok', 'Weights', 'w1', undefined, 'deleted'),
+      S.restore('復原不存在的 Logs → not_found', 'Logs', 'nope'),
+      S.restore('復原不存在的 Items → not_found', 'Items', 'nope'),
+      S.restore('復原 l1', 'Logs', 'l1'),
+      S.restore('復原 l1 兩次', 'Logs', 'l1'),
+    ],
+  },
+  {
+    name: 'delete: Kyujin 刪 Logs — 不存在、別人的（含已刪除）→ forbidden；自己的列重複刪 → ok',
+    steps: [
+      S.append('Kyujin 估算', log('lk', { item_id: '', name: '估的', src: '其他', kcal: 250, protein: 20, fat: 8, carb: 15, source: 'kyujin' }), 'kyujin'),
+      S.append('App 記錄', log('la')),
+      S.del('Kyujin 刪不存在的 → forbidden', 'Logs', 'nope', 'kyujin'),
+      S.del('Kyujin 刪 app 的 → forbidden', 'Logs', 'la', 'kyujin'),
+      S.del('owner 刪 la', 'Logs', 'la'),
+      S.del('Kyujin 刪已刪除的 app 列 → 仍 forbidden', 'Logs', 'la', 'kyujin'),
+      S.del('Kyujin 刪自己的', 'Logs', 'lk', 'kyujin'),
+      S.del('Kyujin 重複刪自己的 → ok', 'Logs', 'lk', 'kyujin', 'deleted'),
+    ],
+  },
+
   // ===== 刪除後的 update／upsert =====
   {
     name: 'conflict: 刪除後 update／upsertItem／upsertStore 回 ignored:deleted 且資料不變',
@@ -324,7 +372,7 @@ const CASES: Case[] = [
       S.item('刪除 → 復原', item('u:11')),
       S.del('刪品項', 'Items', 'u:11'),
       S.restore('復原品項', 'Items', 'u:11'),
-      S.del('刪不存在的品項', 'Items', 'u:none'),
+      S.del('刪不存在的品項 → ok', 'Items', 'u:none', undefined, 'missing'),
     ],
   },
   {
@@ -381,7 +429,7 @@ function v1Outcome(res: Rec): Outcome {
   return o
 }
 
-function v2Outcome(res: Awaited<ReturnType<MemoryServer['mutateRaw']>>): Outcome {
+function v2Outcome(res: Awaited<ReturnType<MemoryServer['mutateRaw']>>, name: string): Outcome {
   if (!res.ok) {
     const o: Outcome = { ok: false, error: res.error }
     const existingId = res.details?.existingId
@@ -391,7 +439,8 @@ function v2Outcome(res: Awaited<ReturnType<MemoryServer['mutateRaw']>>): Outcome
   const r = (res.result ?? {}) as Rec
   const o: Outcome = { ok: true }
   if (r.duplicate) o.duplicate = true
-  if (r.ignored === 'deleted') o.ignored = 'deleted' // 'not_deleted'（v1 沒有）視為普通 ok
+  // 'not_deleted'（v1 沒有）、'missing'（v1 刪除不存在的列只回 ok）視為普通 ok；delete／restore 的 ignored 一律不比（見 step.expect）。
+  if (r.ignored === 'deleted' && !/\.(delete|restore)@/.test(name)) o.ignored = 'deleted'
   if (r.overwritten === true) o.overwritten = true
   return o
 }
@@ -455,7 +504,9 @@ async function runStepBoth(step: Step, gas: ReturnType<typeof readyGas>, server:
     v1 = v1Outcome(res)
     if (!v1.ok) break
   }
-  const v2 = v2Outcome(await server.mutateRaw(step.v2[0], step.v2[1], actorOf(step.who)))
+  const raw = await server.mutateRaw(step.v2[0], step.v2[1], actorOf(step.who))
+  if (step.expect) expect(raw.ok && raw.result, `「${step.label}」的 v2 結果`).toEqual(step.expect)
+  const v2 = v2Outcome(raw, step.v2[0])
   return { v1, v2 }
 }
 

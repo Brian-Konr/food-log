@@ -86,7 +86,7 @@ export type ItemsDeleteResult = RowResult | IgnoredResult
 export async function runItemsDelete(tx: Tx, ctx: Ctx, a: IdArgs): Promise<ItemsDeleteResult> {
   if (!canDeleteOrRestoreItem(ctx.actor)) throw forbidden(KYU_MSG)
   const row = await tx.get('items', a.id)
-  if (!row) throw notFound('找不到這筆紀錄：' + a.id)
+  if (!row) return { ignored: 'missing' } // v1.1.4：不存在也回成功，不寫入
   if (row.deleted_at !== null) return { ignored: 'deleted' }
   const now = nowIso(ctx)
   // 直接刪除的品項不屬於任何「連帶刪除」，cascade_of 維持 null。

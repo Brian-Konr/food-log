@@ -73,9 +73,10 @@ test('復原時如果那天已經有一筆 → bad_record；沒有就復原成�
   expect(row(s, 'weights', 'w1').deleted_at).toBeNull()
 })
 
-test('delete／restore：找不到 → not_found；已刪除再刪、未刪除就復原 → ignored（不寫入、版本號不變）', async () => {
+test('delete 找不到 → ignored:missing、restore 找不到 → not_found；已刪除再刪、未刪除就復原 → ignored（不寫入、版本號不變）', async () => {
   const s = newServer()
-  expectErr(await s.mutate('weights.delete@1', { id: 'nope' }), 'not_found')
+  expect(expectOk(await s.mutate('weights.delete@1', { id: 'nope' }))).toEqual({ ignored: 'missing' }) // v1.1.4
+  expect(s.db.version).toBe(0)
   expectErr(await s.mutate('weights.restore@1', { id: 'nope' }), 'not_found')
   await s.mutate('weights.upsert@1', weightArgs({ id: 'w1', day: TEST_YESTERDAY }))
   const v = s.db.version

@@ -137,8 +137,9 @@ export type LogsDeleteResult = RowResult | IgnoredResult
 
 export async function runLogsDelete(tx: Tx, ctx: Ctx, a: IdArgs): Promise<LogsDeleteResult> {
   const row = await tx.get('logs', a.id)
+  // Kyujin：列不存在或不是 kyujin 的 → forbidden（先於 missing）。owner：不存在、已刪除都當成功，不寫入（Code.gs v1.1.4）。
   if (!canWriteLogRow(ctx.actor, row)) throw forbidden(KYU_MSG)
-  if (!row) throw notFound('找不到這筆紀錄：' + a.id)
+  if (!row) return { ignored: 'missing' }
   if (row.deleted_at !== null) return { ignored: 'deleted' }
   const now = nowIso(ctx)
   tx.put('logs', { ...stripKeys(row), deleted_at: now, updated_at: now })
