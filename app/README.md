@@ -111,6 +111,17 @@ v1.1.4 沒有新欄位，不要跑 migrate，不要跑 `rotateSharedSecret`。`s
 
 scriptId 留給 Brian 填，不要抄其他專案的 scriptId。
 
+### ⛔ 唯讀開關 READ_ONLY（搬到新網址時用）
+
+Script Property `READ_ONLY` 等於 `1` 時，所有寫入 action（`append`、`update`、`softDelete`、`restore`、`upsertItem`、`upsertStore`、`upsertWeight`、`setConfig`）都回 `{ ok:false, error:'read_only', message:'food-log 已搬到新網址，這裡只能讀' }`，不取鎖、不寫 Sheet。`read`、`history`、`summary`、`trends` 和 `GET` 健康檢查照常。沒有這個屬性、或值不是 `1`，行為完全不變。前端把 `read_only` 當永久錯誤：不重試，那筆寫入移到「沒有存到」，顯示上面的訊息。
+
+切換（⛔ Brian 本人，agent 不做）：
+
+1. 先把含這個開關的程式碼部署上去（照「更新程式碼」；`READ_ONLY` 預設不存在，所以部署本身不會改變行為）。
+2. 開「專案設定（齒輪）→ 指令碼屬性 → 編輯指令碼屬性 → 新增」：屬性 `READ_ONLY`，值 `1`，存檔。不用重新部署，下一個請求就生效。
+3. 回滾或取消：把 `READ_ONLY` 改成 `0`，或刪掉這個屬性。同樣不用重新部署。
+4. 用 `GET /exec`（不帶密鑰）確認服務還活著；用一筆測試寫入確認回 `read_only`（⛔ 只有 Brian 對真實網址做）。
+
 ## 共享密鑰
 
 - 密鑰存在 Apps Script「指令碼屬性」的 `SHARED_SECRET`，由 `setupFoodLog` 第一次執行時產生。
@@ -186,7 +197,7 @@ scriptId 留給 Brian 填，不要抄其他專案的 scriptId。
 
 寫入包 `LockService.getScriptLock().tryLock(10000)`。拿不到回 `{ ok:false, error:'busy', message:'另一個人正在寫入，請再試一次' }`。讀取不加鎖。`updated_at` 一律由後端寫成台北現在時間。
 
-錯誤碼只有：`unauthorized`、`bad_json`、`bad_action`、`bad_table`、`bad_record`、`not_found`、`busy`、`server_error`、`forbidden`、`duplicate_name`、`schema_outdated`。
+錯誤碼只有：`unauthorized`、`bad_json`、`bad_action`、`bad_table`、`bad_record`、`not_found`、`busy`、`server_error`、`forbidden`、`duplicate_name`、`schema_outdated`、`read_only`。
 
 `client`：Kyujin 送 `"kyujin"`。App 不送或送 `"app"`。
 

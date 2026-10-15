@@ -5,7 +5,7 @@ import { DEFAULT_CONFIG } from '@/data/defaults'
 import { normalizeSheetSrc } from '@/data/codec'
 import { defaultKv, type Kv } from '@/data/kv'
 import { loadCache, saveCache, snapshotFromCache, toCached, type CachedSnapshot } from '@/data/cache'
-import { NetworkError, PERMANENT_ERRORS, ServerError } from './errors'
+import { NetworkError, PERMANENT_ERRORS, READ_ONLY_MSG, ServerError } from './errors'
 import type { Adapter, Response, WriteOp } from './types'
 
 export type { Adapter } from './types'
@@ -398,7 +398,7 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
           const ids = new Set(moving.map((x) => x.qid))
           outbox = outbox.filter((x) => !ids.has(x.qid))
           failed = [...failed, ...moving.map((x) => ({
-            op: stripForSend(x) as WriteOp, error: res.error, message: res.message, queuedAt: x.queuedAt, qid: x.qid, groupId: x.groupId, label: x.label,
+            op: stripForSend(x) as WriteOp, error: res.error, message: res.message || (res.error === 'read_only' ? READ_ONLY_MSG : undefined), queuedAt: x.queuedAt, qid: x.qid, groupId: x.groupId, label: x.label,
           }))]
           await persistQueue()
           continue

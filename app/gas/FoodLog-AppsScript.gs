@@ -247,11 +247,21 @@ function ensureSheet_(ss, name, cols) {
  *
  * 前端一律用 POST + Content-Type: text/plain（避免 CORS preflight），body 是 JSON：
  *   { secret, action, client?, ... }
+ *
+ * 唯讀開關：Script Property READ_ONLY = '1' 時，所有寫入 action（append、update、softDelete、
+ * restore、upsertItem、upsertStore、upsertWeight、setConfig）回
+ * { ok:false, error:'read_only', message } 且不取鎖、不寫入；read、history、summary、trends 和 GET 健康檢查照常。
+ * 沒有這個屬性、或值不是 '1'，行為不變。
+ *
+ * error 代碼：unauthorized、bad_json、bad_action、bad_table、bad_record、not_found、busy、server_error、
+ * forbidden、duplicate_name、schema_outdated、read_only。
  */
 var API_VERSION = 1;
 var LOCK_WAIT_MS = 10000;
 var NUT_MSG = '紀錄必須有熱量、蛋白質、脂肪、碳水';
 var KYU_MSG = 'Kyujin 只能寫入自建品項或體重';
+var READ_ONLY_MSG = 'food-log 已搬到新網址，這裡只能讀';
+var WRITE_ACTIONS = ['append', 'update', 'softDelete', 'restore', 'upsertItem', 'upsertStore', 'upsertWeight', 'setConfig'];
 
 function doPost(e) {
   return respond_(handle_(parseBody_(e)));
@@ -285,6 +295,9 @@ function handle_(req) {
   try {
     if (req.__parseError) return fail_('bad_json', '請求內容不是合法 JSON');
     if (!checkSecret_(req.secret)) return fail_('unauthorized', '共享密鑰不正確');
+    if (WRITE_ACTIONS.indexOf(req.action) >= 0 && PropertiesService.getScriptProperties().getProperty('READ_ONLY') === '1') {
+      return fail_('read_only', READ_ONLY_MSG);
+    }
     var schemaErr = ensureSchema_();
     if (schemaErr) return schemaErr;
     ensureTextCols_();
