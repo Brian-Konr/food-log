@@ -9,6 +9,7 @@
 //                 (needsReset: epoch differs) and rebuilds its local copy from the server
 // It never touches the auth tables (user, session, account, verification, passkey, apikey, login_codes) or export_progress.
 // meta keys and formats: 0001_init.sql (`meta(key, value ANY)`, rows 'version' = integer, 'epoch' = text such as 'e1'), d1-store.ts (headOf / META_SQL).
+// One statement per line (control characters in strings are written with char()), like tools/migrate/emit-sql.
 // No BEGIN / COMMIT: D1 rejects them in a file. The file is safe to apply again (it starts with the deletes), which is the recovery if an apply stops half way.
 import { randomBytes } from 'node:crypto'
 
@@ -35,7 +36,14 @@ export function sqlLiteral(v: unknown): string {
   if (typeof v === 'boolean') return v ? '1' : '0'
   const s = typeof v === 'string' ? v : JSON.stringify(v)
   if (s.includes('\u0000')) throw new Error('cannot write a string containing NUL to SQL')
-  return `'${s.replaceAll("'", "''")}'`
+  // eslint-disable-next-line no-control-regex
+  if (!/[\u0001-\u001f]/.test(s)) return `'${s.replaceAll("'", "''")}'`
+  // control characters (newline, tab, ...) via char(): the file stays one statement per line, so it survives line-based splitting
+  return s
+    .split(/([\u0001-\u001f])/)
+    .filter((p) => p !== '')
+    .map((p) => (p.length === 1 && p.charCodeAt(0) < 32 ? `char(${p.charCodeAt(0)})` : `'${p.replaceAll("'", "''")}'`))
+    .join(' || ')
 }
 
 const IDENT = /^[a-z][a-z0-9_]*$/
@@ -79,11 +87,11 @@ export function buildRestoreSql(input: RestoreSqlInput): RestoreSql {
     if (rows.length === 0) continue
     const cols = Object.keys(rows[0]!)
     for (const c of cols) if (!IDENT.test(c)) throw new Error(`${t}: unsafe column name ${JSON.stringify(c)}`)
-    const head = `INSERT INTO ${t} (${cols.join(', ')}) VALUES\n`
+    const head = `INSERT INTO ${t} (${cols.join(', ')}) VALUES `
     let values: string[] = []
     let bytes = head.length
     const flush = () => {
-      if (values.length > 0) stmts.push(head + values.join(',\n'))
+      if (values.length > 0) stmts.push(head + values.join(', '))
       values = []
       bytes = head.length
     }

@@ -1,0 +1,28 @@
+{
+  "name": "@food-log/migrate",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "v1 Sheet -> v2 D1 migration tools: fetch-sheet, transform, emit-sql, verify, reverse-export (rollback). Nothing here deploys; the commands that touch real data are run by Brian (docs/runbooks/v2-cutover.md).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "fetch-sheet": "tsx src/fetch-sheet.ts",
+    "emit-sql": "tsx src/emit-sql.ts",
+    "verify": "tsx src/verify.ts",
+    "reverse-export": "tsx src/reverse-export.ts",
+    "d1-dump-command": "tsx src/dump.ts"
+  },
+  "dependencies": {
+    "@food-log/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}

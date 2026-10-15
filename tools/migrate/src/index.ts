@@ -1,0 +1,11 @@
+// Public surface of @food-log/migrate (for other workspace tools; the CLIs are run with tsx, see package.json scripts).
+export * from './types.ts'
+export * from './gas-client.ts'
+export { fetchSheet, writeSnapshot, HISTORY_LIMIT } from './fetch-sheet.ts'
+export * from './transform.ts'
+export { COLUMNS, PK, MAX_ROWS_PER_VERSION, chunkRows, dbValue, emitSql, newEpoch, resetSql, rowsOf, sqlLiteral, upsertSql, BUMP_VERSION_SQL } from './emit-sql.ts'
+export * from './dump.ts'
+export { verifySnapshot, formatReport, expectation } from './verify.ts'
+export type { Check, VerifyReport } from './verify.ts'
+export { buildPlan, applyPlan, formatPlan } from './reverse-export.ts'
+export type { GasStep, Plan, ApplyReport } from './reverse-export.ts'
