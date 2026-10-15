@@ -17,6 +17,11 @@ export interface Env {
    * 'APP_ORIGIN not configured' (fail closed).
    */
   APP_ORIGIN?: string
+  /**
+   * Workers Rate Limiting binding (wrangler.jsonc `ratelimits`) for POST /telemetry/error, keyed on the client IP.
+   * Optional: when it is absent (tests, older config) the Worker falls back to a per-isolate token bucket.
+   */
+  TELEMETRY_LIMITER?: RateLimit
 }
 
 export function allowedEmails(env: Pick<Env, 'ALLOWED_EMAILS'>): Set<string> {

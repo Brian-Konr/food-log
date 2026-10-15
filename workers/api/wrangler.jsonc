@@ -33,6 +33,11 @@
     }
   ],
 
+  // POST /telemetry/error is public: per-IP limit with the Workers Rate Limiting binding (10 requests / 60 s per IP).
+  // namespace_id is just a number you pick, unique inside your account. Without the binding the Worker falls back to
+  // a per-isolate token bucket (src/routes/telemetry.ts).
+  "ratelimits": [{ "name": "TELEMETRY_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }],
+
   // Daily export at 20:00 UTC = 04:00 Taipei (src/cron/export.ts)
   "triggers": { "crons": ["0 20 * * *"] },
 
