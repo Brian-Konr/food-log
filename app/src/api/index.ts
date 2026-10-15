@@ -92,7 +92,10 @@ function isCreate(op: WriteOp): boolean {
   return op.action === 'append' || op.action === 'upsertItem' || op.action === 'upsertStore' || op.action === 'upsertWeight'
 }
 
-type LocalStash = { outbox: Queued[]; failed: FailedWrite[] }
+type ClearedStore = { qid: string; id: string; store: string }
+type LocalStash = { outbox: Queued[]; failed: FailedWrite[]; cleared?: ClearedStore[]; at?: number }
+// 本機丟掉的暫存留多久（和刪除 toast 同一個生命週期，留一點餘裕）。
+const LOCAL_UNDO_TTL_MS = 10_000
 type WriteTable = 'Logs' | 'Weights' | 'Items' | 'Stores'
 
 export interface ApiOptions {
@@ -124,7 +127,15 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
   const status = (): ApiStatus => ({ pending: outbox.length, failed: [...failed], online, adapter: adapter.kind })
   const emit = () => { const s = status(); listeners.forEach((fn) => fn(s)) }
 
+  function pruneLocalUndo() {
+    const t = now()
+    for (const [k, st] of [...localUndo]) {
+      if (typeof st.at === 'number' && t - st.at > LOCAL_UNDO_TTL_MS) localUndo.delete(k)
+    }
+  }
+
   function pruneFailedNotified() {
+    pruneLocalUndo()
     const keep = new Set<string>()
     for (const f of failed) keep.add(f.qid)
     for (const stash of localUndo.values()) {
@@ -141,6 +152,7 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
       await kv.set('outbox', JSON.stringify(outbox))
       await kv.set('failed', JSON.stringify(failed))
       await kv.set('failedNotified', JSON.stringify([...failedNotified]))
+      await kv.set('localUndo', JSON.stringify([...localUndo.entries()].map(([key, stash]) => ({ key, stash }))))
     })
     persistChain = job.then(() => {}, () => {})
     return job
@@ -171,9 +183,10 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
   function relatedKeys(table: WriteTable, id: string): Set<string> {
     const keys = new Set<string>([table + '\n' + id])
     if (table !== 'Stores') return keys
+    // 只連帶店家自己的「從未同步的」品項。Logs 不連帶（v1：刪店家不動 Logs），見 clearLogStores。
+    // 對已在伺服器上的品項的編輯也不碰：留在佇列，伺服器若拒收會進 failed 讓使用者看到。
     const scan = (op: WriteOp) => {
-      if (op.action === 'upsertItem' && op.record.store === id) keys.add('Items\n' + op.record.id)
-      if (op.action === 'append' && op.record.store === id) keys.add('Logs\n' + op.record.id)
+      if (op.action === 'upsertItem' && op.record.store === id && !serverHas('Items', op.record.id)) keys.add('Items\n' + op.record.id)
     }
     for (const q of outbox) scan(q)
     for (const f of failed) scan(f.op)
@@ -202,18 +215,44 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
     return { outbox: structuredClone(takenOut), failed: structuredClone(takenFail) }
   }
 
+  // 最後一次伺服器快照（讀取結果／快取，加上已成功送出的 op）有沒有這筆 id。不含 outbox／failed 的樂觀疊加。
+  function serverHas(table: WriteTable, id: string): boolean {
+    if (!lastData) return false
+    const rows: { id: string }[] =
+      table === 'Logs' ? lastData.logs : table === 'Items' ? lastData.items : table === 'Weights' ? lastData.weights : (lastData.stores ?? [])
+    return rows.some((r) => r.id === id)
+  }
+
+  // 店家被本機丟掉時，指到它的待送 Logs 不能跟著丟，也不能指向不存在的店：清掉 store 欄位。
+  function clearLogStores(storeId: string): ClearedStore[] {
+    const cleared: ClearedStore[] = []
+    const fix = <T extends WriteOp>(op: T, qid: string): T => {
+      if (op.action !== 'append' || op.record.store !== storeId) return op
+      cleared.push({ qid, id: op.record.id, store: storeId })
+      return { ...op, record: { ...op.record, store: '' } } as T
+    }
+    outbox = outbox.map((q) => fix(q, q.qid))
+    failed = failed.map((f) => { const op = fix(f.op, f.qid); return op === f.op ? f : { ...f, op } })
+    return cleared
+  }
+
+  // 「從未同步的 create」：有排隊／失敗的 create，而且伺服器快照裡沒有這筆。
+  // upsertItem／upsertStore 也會編輯已存在的列（離線改名），那種不是 create，刪除必須送 softDelete。
   function hasUnsyncedCreate(table: WriteTable, id: string): boolean {
+    if (serverHas(table, id)) return false
     const hit = (op: WriteOp) => isCreate(op) && opTable(op) === table && recordId(op) === id
     return outbox.some((op) => hit(op)) || failed.some((f) => hit(f.op))
   }
 
-  function dropUnsyncedCreate(table: WriteTable, id: string): { queued: boolean; qid: string } {
+  async function dropUnsyncedCreate(table: WriteTable, id: string): Promise<{ queued: boolean; qid: string }> {
     const key = `${table}:${id}`
     if (localUndo.has(key)) return { queued: false, qid: '' }
     const taken = takeRelated(table, id)
+    if (table === 'Stores') taken.cleared = clearLogStores(id)
+    taken.at = now()
     localUndo.set(key, taken)
     emit()
-    void persistQueue()
+    await persistQueue()
     return { queued: false, qid: '' }
   }
 
@@ -236,10 +275,17 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
       list.push(row)
       groups.set(key, list)
     }
-    for (const list of groups.values()) {
-      const hasC = list.some((r) => r.op.action === 'append' || r.op.action === 'upsertItem' || r.op.action === 'upsertStore' || r.op.action === 'upsertWeight')
-      const hasDel = list.some((r) => r.op.action === 'softDelete')
-      if (!hasC || !hasDel) continue
+    const failErr = new Map(failed.map((f) => [f.qid, f.error]))
+    for (const [key, list] of groups) {
+      const creates = list.filter((r) => isCreate(r.op))
+      const dels = list.filter((r) => r.op.action === 'softDelete')
+      if (!creates.length || !dels.length) continue
+      const [table, id] = key.split('\n') as [WriteTable, string]
+      // 伺服器回過 not_found，就證明這筆從沒同步；否則看啟動時的快取（伺服器快照）有沒有這筆。
+      // append 永遠是 create；upsert* 也可能是對已存在列的編輯，沒有快取就不丟（保守，保留刪除）。
+      const proven = dels.some((r) => failErr.get(r.qid) === 'not_found')
+      const neverSynced = proven || (!serverHas(table, id) && (!creates.some((r) => r.op.action !== 'append') || !!cacheMeta))
+      if (!neverSynced) continue
       for (const r of list) drop.add(r.qid)
     }
     if (drop.size === 0) return 0
@@ -342,6 +388,11 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
     for (const q of outbox) applyOp(data, q, true, { queuedAt: q.queuedAt, sawNet: q.sawNet })
     for (const f of failed) {
       if (f.op.action === 'softDelete' || f.op.action === 'restore') continue
+      // 已存在的列被刪除後，失敗的編輯不能把它在畫面上復活（編輯仍留在 failed，由使用者重試或捨棄）
+      if (f.op.action === 'upsertItem') {
+        const rid = f.op.record.id
+        if (data.items.some((r) => r.id === rid && r.deleted)) continue
+      }
       if (f.op.action === 'upsertStore') continue
       if (f.label === 'fav' || (f.op.action === 'setConfig' && f.op.key === 'fav_ids')) continue
       applyOp(data, f.op, false, { queuedAt: f.queuedAt, failed: true, message: f.message })
@@ -406,6 +457,7 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
         if (missingDelete) {
           const del = rest as WriteOp & { action: 'softDelete'; table: WriteTable; id: string }
           takeRelated(del.table, del.id)
+          if (del.table === 'Stores') clearLogStores(del.id)
           localUndo.delete(`${del.table}:${del.id}`)
         }
         clearRetries()
@@ -475,6 +527,12 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
 
   const ready: Promise<void> = (async () => {
     failedNotified = new Set(parseList<string>(await kv.get('failedNotified')))
+    for (const e of parseList<{ key: string; stash: LocalStash }>(await kv.get('localUndo'))) {
+      const st = e?.stash
+      if (!e?.key || !st || !Array.isArray(st.outbox) || !Array.isArray(st.failed)) continue
+      if (typeof st.at !== 'number' || now() - st.at > LOCAL_UNDO_TTL_MS) continue
+      localUndo.set(e.key, st)
+    }
     await migrateFromLocalStorage()
     cacheMeta = await loadCache(kv)
     if (cacheMeta) lastData = snapshotFromCache(cacheMeta)
@@ -554,15 +612,26 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
     },
     undoLocalDrop(table: WriteTable, id: string): boolean {
       const key = `${table}:${id}`
+      pruneLocalUndo()
       const stash = localUndo.get(key)
       if (!stash) return false
       outbox = unionByQid(outbox, stash.outbox)
       failed = unionByQid(failed, stash.failed)
+      for (const c of stash.cleared ?? []) {
+        const q = outbox.find((x) => x.qid === c.qid)
+        const f = failed.find((x) => x.qid === c.qid)
+        if (q && q.action === 'append') q.record = { ...q.record, store: c.store }
+        else if (f && f.op.action === 'append') f.op = { ...f.op, record: { ...f.op.record, store: c.store } }
+        else {
+          // 那筆 Log 已經送出（store 是空的）：補一個 update，把店家接回去。
+          outbox = [...outbox, { action: 'update', table: 'Logs', id: c.id, patch: { store: c.store }, qid: uuid(), queuedAt: taipeiIso(now()) }]
+        }
+      }
       localUndo.delete(key)
       for (const f of stash.failed) failedNotified.add(f.qid)
       emit()
       void persistQueue()
-      if (stash.outbox.length > 0) void flush()
+      if (outbox.length > 0) void flush()
       return true
     },
     async failedNotified(): Promise<string[]> {
