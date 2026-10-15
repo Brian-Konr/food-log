@@ -110,7 +110,7 @@ export class SyncClient {
   pushOnce(): Promise<void> {
     return this.serial(async () => {
       if (!this.transport) throw new Error('試用模式不同步')
-      await pushPending({ db: this.db, transport: this.transport, cursor: this.cursor, now: this.now, onChanged: () => void this.status.refresh(this.db) })
+      await pushPending({ db: this.db, transport: this.transport, cursor: this.cursor, now: this.now, onChanged: () => void this.status.refresh(this.db).catch(() => {}) })
       await this.status.refresh(this.db)
     })
   }
