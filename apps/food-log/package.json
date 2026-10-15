@@ -17,7 +17,9 @@
     "e2e": "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 PLAYWRIGHT_DIR=/workspace/photo-repro/node_modules/playwright node e2e/real-click.mjs"
   },
   "dependencies": {
+    "@better-auth/passkey": "1.7.10",
     "@food-log/ui": "workspace:*",
+    "better-auth": "1.7.10",
     "lucide-react": "^1.48.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
