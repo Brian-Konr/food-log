@@ -5,9 +5,10 @@
 ## 目錄
 
 - `apps/food-log/`：前端 PWA（由 v1 的 `app/` 搬來）。細節見 [`apps/food-log/AGENTS.md`](apps/food-log/AGENTS.md)，其中的路徑要照下面的對照改。
-- `legacy/`：v1 的 Apps Script（`legacy/gas/`）、GAS 測試（`legacy/test/`）、v1 部署腳本（`legacy/scripts/`）。切換滿 30 天後刪除。
+- `legacy/`：v1 的 Apps Script（`legacy/gas/`）、GAS 測試（`legacy/test/`）、合併檔產生腳本（`legacy/scripts/build-gas.mjs`）。**沒有任何部署腳本**。切換滿 30 天後刪除。
 - `packages/*`、`workers/*`、`tools/*`：v2 新增（見計畫第 2 節）。
-- 舊路徑對照：`app/` → `apps/food-log/`；`app/gas/` → `legacy/gas/`；`app/test/gas-*` → `legacy/test/`；`app/scripts/{build-gas.mjs,deploy-gas.sh,deploy-gh-pages.sh}` 與 `app/deploy/` → `legacy/scripts/`、`legacy/deploy/`。
+- 舊路徑對照：`app/` → `apps/food-log/`；`app/gas/` → `legacy/gas/`；`app/test/gas-*` → `legacy/test/`；`app/scripts/build-gas.mjs` → `legacy/scripts/build-gas.mjs`。
+- **v1 的部署（GitHub Pages、Apps Script）只能從 `main` 做**（`main` 的 `app/scripts/deploy-*.sh`、`app/deploy/`）。`v2` 分支刻意不放 `deploy-gh-pages.sh`、`deploy-gas.sh`、`deploy/gas-url`，以免從 `v2` 蓋掉正式的 v1。合併 `main` 時這些檔案一律忽略（見下方合併規則）。
 
 ## 指令
 

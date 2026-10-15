@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { afterEach, expect, test } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { SearchSheet } from '@/components/SearchSheet'
@@ -174,26 +171,4 @@ test('toast 與內容欄同寬（max-w-xl）', () => {
   )
   const inner = container.querySelector('[role=status]')
   expect(inner?.className).toMatch(/max-w-xl/)
-})
-
-test('deploy-gas.sh 走 clasp/ 正式專案', () => {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const sh = readFileSync(path.join(here, '../../../legacy/scripts/deploy-gas.sh'), 'utf8')
-  expect(sh).toContain('npm run build:gas')
-  expect(sh).toContain('FoodLog-AppsScript.gs')
-  expect(sh).toContain('Code.js')
-  expect(sh).toContain('src-bak-')
-  expect(sh).toContain('/home/box/.local/bin/clasp')
-  expect(sh).toContain('update-deployment')
-  expect(sh).toContain('appsscript.json')
-  expect(sh).toContain('clasp')
-  expect(sh).not.toMatch(/app\/\.clasp\.json|gas\/\.clasp\.json/)
-  expect(sh).toContain('FOODLOG_DEPLOY_ID')
-  expect(sh).toContain('AKfycbzkkNiqeHeFF7i0qgC8V8vTApGuvLgCgobEsDI_63c1ZUpftEf2tqYCjO57L64nlqwffQ')
-  expect(sh).not.toContain('@HEAD')
-  expect(sh).not.toContain('deployments')
-  const parts = sh.split('"$CLASP_BIN"')
-  expect(parts).toHaveLength(3)
-  expect(parts[0]).toContain('cd "$CLASP_DIR"')
-  expect(parts[1]).toContain('cd "$CLASP_DIR"')
 })
