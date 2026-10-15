@@ -116,6 +116,7 @@ class D1ServerTx implements ServerTx {
     readonly version: number,
     readonly lastMutationId: number,
     private readonly now: () => number,
+    private readonly hint: { set(h: Hint | null): void },
   ) {
     this.tx = new D1Tx(db, userId, now)
   }
@@ -178,8 +179,11 @@ class D1ServerTx implements ServerTx {
     try {
       await db.batch(stmts)
       casStats.commits++
+      // next begin() for this device can skip its read: we know what we just committed (the guards protect the guess)
+      this.hint.set({ clientId, version: input.ok && this.tx.hasWrites ? version + 1 : version, cursor: input.mutationId })
       return true
     } catch (e) {
+      this.hint.set(null)
       if (isCasConflict(e)) {
         casStats.conflicts++
         return false
@@ -200,8 +204,20 @@ class D1ServerTx implements ServerTx {
   }
 }
 
+/** What begin() would read, guessed from this instance's own last commit. */
+type Hint = { clientId: string; version: number; cursor: number }
+
 /** A user-bound store. Besides core's UserStore it has the read helpers of /bot/v1 and the export cron. */
 export class D1UserStore implements UserStore {
+  /**
+   * D1 free plan: 50 queries per invocation. After this instance committed mutation m for a device, the next begin() for the
+   * same device does not read (version, cursor) again but takes them from the commit it just made. That is only a guess about
+   * other writers, but commit() re-checks both through its CAS guards: a wrong guess is a conflict, which clears the hint and
+   * retries with a real read. Saves one call per mutation of a push.
+   */
+  private hint: Hint | null = null
+  private readonly hintSink = { set: (h: Hint | null) => { this.hint = h } }
+
   constructor(
     private readonly db: D1Database,
     readonly userId: string,
@@ -209,10 +225,15 @@ export class D1UserStore implements UserStore {
   ) {}
 
   async begin(clientId: string): Promise<ServerTx> {
+    const h = this.hint
+    if (h && h.clientId === clientId) {
+      this.hint = null // consumed: a retry (after a conflict) reads for real
+      return new D1ServerTx(this.db, this.userId, clientId, h.version, h.cursor, this.now, this.hintSink)
+    }
     const [metaRs, curRs] = await this.db.batch([this.db.prepare(META_SQL), this.db.prepare(CURSOR_SQL).bind(this.userId, clientId)])
     const { version } = headOf((metaRs as D1Result<MetaRow>).results)
     const cursor = ((curRs as D1Result<{ c: number }>).results[0]?.c as number | undefined) ?? 0
-    return new D1ServerTx(this.db, this.userId, clientId, version, cursor, this.now)
+    return new D1ServerTx(this.db, this.userId, clientId, version, cursor, this.now, this.hintSink)
   }
 
   async readMeta(): Promise<{ epoch: string; version: number }> {

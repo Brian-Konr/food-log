@@ -1,5 +1,7 @@
-// Shared helpers for the ops scripts. These scripts only PRINT SQL / wrangler commands.
-// Brian runs the printed commands himself; nothing here talks to Cloudflare.
+// Shared helpers for the ops scripts. These scripts only PRINT SQL / wrangler commands (and bot-key.ts writes one local
+// 600-permission file). Brian runs the printed commands himself; nothing here talks to Cloudflare.
+export const DEFAULT_DB = 'food-log'
+
 export function parseArgs(argv: string[]): { flags: Set<string>; opts: Record<string, string> } {
   const flags = new Set<string>()
   const opts: Record<string, string> = {}
@@ -16,8 +18,7 @@ export function parseArgs(argv: string[]): { flags: Set<string>; opts: Record<st
   return { flags, opts }
 }
 
-/** SQL string literal. */
-export const sqlStr = (s: string): string => `'${s.replaceAll("'", "''")}'`
+export { sqlStr } from '../src/ops-sql.ts'
 
 /** POSIX shell single-quote. */
 export const shQuote = (s: string): string => `'${s.replaceAll("'", `'\\''`)}'`
@@ -38,7 +39,7 @@ export function target(flags: Set<string>): '--remote' | '--local' {
   return flags.has('remote') ? '--remote' : '--local'
 }
 
-/** `pnpm exec wrangler d1 execute <db> --remote --command '<sql>'` */
+/** `pnpm --filter @food-log/api exec wrangler d1 execute <db> --remote --command '<sql>'` (local pnpm: `npx -y pnpm@10 ...`). */
 export function wranglerCommand(db: string, where: string, sql: string): string {
-  return `pnpm --filter @food-log/api exec wrangler d1 execute ${db} ${where} --command ${shQuote(sql.replace(/\s+/g, ' ').trim())}`
+  return `npx -y pnpm@10 --filter @food-log/api exec wrangler d1 execute ${db} ${where} --command ${shQuote(sql.replace(/\s+/g, ' ').trim())}`
 }

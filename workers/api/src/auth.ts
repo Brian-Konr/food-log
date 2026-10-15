@@ -6,7 +6,7 @@ import { APIError, createAuthEndpoint } from 'better-auth/api'
 import { setSessionCookie } from 'better-auth/cookies'
 import { drizzle } from 'drizzle-orm/d1'
 import * as z from 'zod'
-import { BOT_KEY_PREFIX } from './bot-key.ts'
+import { BOT_KEY_PREFIX, BOT_METADATA } from './bot-key.ts'
 import { hashCode } from './code-hash.ts'
 import * as schema from './db/schema.ts'
 import { allowedEmails } from './env.ts'
@@ -15,11 +15,7 @@ import type { Env } from './env.ts'
 export const SESSION_DAYS = 90
 export const COOKIE_CACHE_SECONDS = 5 * 60
 
-/** Scopes of the Kyujin API key (PRD 7.2). Stored as key permissions {"foodlog": ["read", "write.kyujin"]}. */
-export const BOT_SCOPES = { read: 'foodlog:read', write: 'foodlog:write.kyujin' } as const
-export const BOT_PERMISSIONS = { foodlog: ['read', 'write.kyujin'] } as const
-/** The key's metadata decides which actor a bot request runs as. Only 'kyujin' exists. */
-export const BOT_METADATA = { actor: 'kyujin' } as const
+export { BOT_METADATA, BOT_PERMISSIONS } from './bot-key.ts'
 
 /**
  * One-time login code (plan 0.3): the first login and the passkey-lost fallback.

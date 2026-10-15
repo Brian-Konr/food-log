@@ -4,6 +4,11 @@
 const B62 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
 export const BOT_KEY_PREFIX = 'flk_'
 
+/** Scopes of the Kyujin API key (PRD 7.2), stored as key permissions {"foodlog": ["read", "write.kyujin"]} (= foodlog:read, foodlog:write.kyujin). */
+export const BOT_PERMISSIONS = { foodlog: ['read', 'write.kyujin'] } as const
+/** The key's metadata decides which actor a bot request runs as. Only 'kyujin' exists. */
+export const BOT_METADATA = { actor: 'kyujin' } as const
+
 /** `flk_` + 48 random base62 characters (~286 bits). Rejection sampling keeps it uniform. */
 export function generateBotKey(): string {
   const out: string[] = []
@@ -29,31 +34,32 @@ export async function hashApiKey(key: string): Promise<string> {
 export type KeyInsertInput = {
   id: string
   key: string
-  userId: string
   name: string
   permissions: Record<string, readonly string[]>
   metadata: Record<string, unknown>
   nowMs: number
-}
+} & ({ userId: string; email?: undefined } | { email: string; userId?: undefined })
 
-/** INSERT for the `apikey` table (positional parameters). */
+const INSERT_COLUMNS =
+  'id, config_id, name, start, reference_id, prefix, key, enabled, rate_limit_enabled, request_count, created_at, updated_at, permissions, metadata'
+
+/**
+ * INSERT for the `apikey` table (positional parameters). The owner is either a known user id, or looked up by email inside the
+ * statement (scripts/bot-key.ts prints that form for `wrangler d1 execute --command`; it inserts 0 rows if the owner does not exist).
+ */
 export async function buildKeyInsert(i: KeyInsertInput): Promise<{ sql: string; params: Array<string | number | null> }> {
+  const hash = await hashApiKey(i.key)
+  const head: Array<string | number | null> = [i.id, i.name, i.key.slice(0, 6)]
+  const tail: Array<string | number | null> = [BOT_KEY_PREFIX, hash, i.nowMs, i.nowMs, JSON.stringify(i.permissions), JSON.stringify(i.metadata)]
+  if (i.email !== undefined) {
+    return {
+      sql: `INSERT INTO apikey (${INSERT_COLUMNS}) SELECT ?, 'default', ?, ?, id, ?, ?, 1, 0, 0, ?, ?, ?, ? FROM user WHERE email = ?`,
+      params: [...head, ...tail, i.email.toLowerCase()],
+    }
+  }
   return {
-    sql:
-      `INSERT INTO apikey (id, config_id, name, start, reference_id, prefix, key, enabled, rate_limit_enabled, request_count, created_at, updated_at, permissions, metadata) ` +
-      `VALUES (?, 'default', ?, ?, ?, ?, ?, 1, 0, 0, ?, ?, ?, ?)`,
-    params: [
-      i.id,
-      i.name,
-      i.key.slice(0, 6),
-      i.userId,
-      BOT_KEY_PREFIX,
-      await hashApiKey(i.key),
-      i.nowMs,
-      i.nowMs,
-      JSON.stringify(i.permissions),
-      JSON.stringify(i.metadata),
-    ],
+    sql: `INSERT INTO apikey (${INSERT_COLUMNS}) VALUES (?, 'default', ?, ?, ?, ?, ?, 1, 0, 0, ?, ?, ?, ?)`,
+    params: [...head, i.userId, ...tail],
   }
 }
 
