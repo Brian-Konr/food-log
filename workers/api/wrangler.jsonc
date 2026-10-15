@@ -1,0 +1,52 @@
+{
+  // food-log v2 Worker: API + static assets (the PWA) + cron export. Nothing here is a secret.
+  "name": "food-log",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // The Worker serves the PWA (apps/food-log/dist) as static assets with SPA fallback.
+  // Only the API paths run the Worker first; everything else is served straight from assets.
+  "assets": {
+    "directory": "../../apps/food-log/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/sync/*", "/bot/*", "/api/*", "/telemetry/*"]
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "food-log",
+      // ⛔ Brian: replace with the id printed by `wrangler d1 create food-log` (not a secret).
+      // The placeholder is fine for `wrangler dev --local` and the tests.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "EXPORTS",
+      // ⛔ Brian: `wrangler r2 bucket create food-log-exports` (R2 may ask for a card on the free plan, plan section 8).
+      "bucket_name": "food-log-exports"
+    }
+  ],
+
+  // Daily export at 20:00 UTC = 04:00 Taipei (src/cron/export.ts)
+  "triggers": { "crons": ["0 20 * * *"] },
+
+  "vars": {
+    // reject push from clients older than this with 409 client_too_old (rollback: set 9999)
+    "MIN_CLIENT_VERSION": "1",
+    // ⛔ Brian: APP_ORIGIN is MANDATORY once deployed. The Worker answers 500 'APP_ORIGIN not configured' on
+    // /api/auth/*, /sync/* and /bot/* without it; only localhost may omit it. It is the passkey origin
+    // (the RP ID is its hostname). After the first deploy prints https://food-log.<your-subdomain>.workers.dev,
+    // replace the empty value below with that origin and deploy again. Not a secret. Keep it empty for `wrangler dev --local`.
+    "APP_ORIGIN": ""
+  }
+
+  // Secrets (never in git; set with `wrangler secret put <NAME>`):
+  //   BETTER_AUTH_SECRET  random value, e.g. `openssl rand -base64 32`
+  //   ALLOWED_EMAILS      comma separated owner emails (the only addresses that can ever get a session)
+}
