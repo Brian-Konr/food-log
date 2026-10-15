@@ -2,11 +2,13 @@ import { afterEach, test, vi } from 'vitest'
 import assert from 'node:assert/strict'
 import { createApi, memoryKv } from '@/api'
 import { createMockAdapter } from '@/api/mock'
+import { NetworkError } from '@/api/errors'
 import type { Op } from '@/api/types'
 import { memoryStorage, logFields, itemFields, storeFields } from './helpers'
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.useRealTimers()
 })
 
 const NOW = Date.parse('2026-10-10T18:00:00+08:00')
@@ -27,6 +29,21 @@ function wrap(
       return inner.call(op)
     },
   }
+}
+
+// 離線（NetworkError）會讓佇列頭的 op 標上 sawNet（請求可能已到伺服器），那種不算「從未同步」。
+// 要測「確定沒送出」的情況，用 busy（可重試、沒有網路錯誤）讓 op 留在 outbox。
+// 讓寫入收到可重試的 busy：op 留在 outbox，但沒有 sawNet（沒有網路錯誤）。
+function holdable(also?: (op: Op) => ReturnType<ReturnType<typeof createMockAdapter>['call']> | undefined) {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }) // busy 會排重試計時器，測試裡不要真的跑
+  const storage = memoryStorage()
+  const inner = createMockAdapter({ storage, now: () => NOW })
+  let hold = false
+  const adapter = wrap(inner, (op) => {
+    if (hold && op.action !== 'read') return Promise.resolve({ ok: false as const, error: 'busy' })
+    return also?.(op)
+  })
+  return { storage, inner, adapter, setHold: (v: boolean) => { hold = v } }
 }
 
 test('未同步 failed append，remove 不打後端；復原回 failed', async () => {
@@ -62,12 +79,10 @@ test('未同步 failed append，remove 不打後端；復原回 failed', async (
 })
 
 test('未同步 outbox append；復原回 outbox', async () => {
-  const storage = memoryStorage()
-  const inner = createMockAdapter({ storage, now: () => NOW })
-  const adapter = wrap(inner)
+  const { storage, adapter, setHold } = holdable()
   const api = createApi({ adapter, storage, now: () => NOW })
   await api.ready
-  adapter.setOffline(true)
+  setHold(true)
   const rec = logFields({ id: 'l-out' })
   await api.appendLog(rec)
   const qid = api.outbox()[0].qid
@@ -235,6 +250,7 @@ test('未同步 upsertItem', async () => {
   })
   const api = createApi({ adapter, storage, now: () => NOW })
   await api.ready
+  await api.load() // 有伺服器快照，這筆被拒收的 upsertItem 才確定是新增
   const rec = itemFields({ id: 'u:1', name: '豆漿' })
   await api.upsertItem(rec)
   const n = adapter.calls.length
@@ -245,12 +261,11 @@ test('未同步 upsertItem', async () => {
 })
 
 test('未同步的店連子項；已同步的店仍送 softDelete', async () => {
-  const storage = memoryStorage()
-  const inner = createMockAdapter({ storage, now: () => NOW })
-  const adapter = wrap(inner)
+  const { storage, adapter, setHold } = holdable()
   const api = createApi({ adapter, storage, now: () => NOW })
   await api.ready
-  adapter.setOffline(true)
+  await api.load()
+  setHold(true)
   const store = storeFields({ id: 's:1', name: '店' })
   const item = itemFields({ id: 'u:s1', name: '品', store: 's:1' })
   const log = logFields({ id: 'l:s1', store: 's:1' })
@@ -411,17 +426,16 @@ test('heal：快取裡沒有這個品項（從未同步）的 [upsert, softDelet
 })
 
 test('刪除未同步的店：待送 Logs 留著、store 清空；復原把 store 接回（outbox 與 failed 都是）', async () => {
-  const storage = memoryStorage()
-  const inner = createMockAdapter({ storage, now: () => NOW })
-  const adapter = wrap(inner, (op) => {
+  const { storage, adapter, setHold } = holdable((op) => {
     if (op.action === 'append' && op.record.id === 'l:bad') return Promise.resolve({ ok: false as const, error: 'bad_record', message: '壞' })
   })
   const api = createApi({ adapter, storage, now: () => NOW })
   await api.ready
+  await api.load()
   // 先讓 l:bad 進 failed（這時店家還不存在於伺服器，所以用 mock 直接拒收）
   await api.appendLog(logFields({ id: 'l:bad', store: 's:new' }))
   assert.equal(api.failed().length, 1)
-  adapter.setOffline(true)
+  setHold(true)
   await api.upsertStore(storeFields({ id: 's:new', name: '新店' }))
   await api.appendLog(logFields({ id: 'l:ok', store: 's:new', name: '午餐' }))
   const n = adapter.calls.length
@@ -447,16 +461,15 @@ test('刪除未同步的店：待送 Logs 留著、store 清空；復原把 stor
 })
 
 test('刪除未同步的店後上線：餐點仍被記錄（沒有店家）', async () => {
-  const storage = memoryStorage()
-  const inner = createMockAdapter({ storage, now: () => NOW })
-  const adapter = wrap(inner)
+  const { storage, adapter, setHold } = holdable()
   const api = createApi({ adapter, storage, now: () => NOW })
   await api.ready
-  adapter.setOffline(true)
+  await api.load()
+  setHold(true)
   await api.upsertStore(storeFields({ id: 's:gone', name: '店' }))
   await api.appendLog(logFields({ id: 'l:keep', store: 's:gone', name: '便當' }))
   await api.remove('Stores', 's:gone')
-  adapter.setOffline(false)
+  setHold(false)
   await api.flush()
   assert.equal(api.failed().length, 0)
   const snap = await api.load()
@@ -466,14 +479,12 @@ test('刪除未同步的店後上線：餐點仍被記錄（沒有店家）', as
 })
 
 test('重新載入後，本機刪除的復原仍有效；超過 10 秒的暫存啟動時丟掉', async () => {
-  const storage = memoryStorage()
-  const inner = createMockAdapter({ storage, now: () => NOW })
-  const adapter = wrap(inner)
+  const { storage, inner, adapter, setHold } = holdable()
   const kv = memoryKv()
   let t = NOW
   const api = createApi({ adapter, storage, now: () => t, kv })
   await api.ready
-  adapter.setOffline(true)
+  setHold(true)
   const rec = logFields({ id: 'l-reload' })
   await api.appendLog(rec)
   await api.remove('Logs', rec.id)
@@ -498,4 +509,174 @@ test('重新載入後，本機刪除的復原仍有效；超過 10 秒的暫存�
   const api3 = createApi({ adapter: wrap(inner3), storage, now: () => t, kv })
   await api3.ready
   assert.equal(api3.undoLocalDrop('Logs', rec2.id), false)
+})
+
+// ---- v1.1.6 review fixes ----
+
+test('遺失回應的 create（sawNet）：刪除要真的送 softDelete', async () => {
+  const storage = memoryStorage()
+  const inner = createMockAdapter({ storage, now: () => NOW })
+  let lose = true
+  const adapter = wrap(inner, (op) => {
+    if (lose && op.action === 'append') return Promise.reject(new NetworkError('逾時', 'timeout'))
+  })
+  const api = createApi({ adapter, storage, now: () => NOW })
+  await api.ready
+  const rec = logFields({ id: 'l-lost' })
+  await api.appendLog(rec)
+  assert.equal(api.outbox()[0].sawNet, true)
+  await api.remove('Logs', rec.id)
+  assert.deepEqual(api.outbox().map((x) => x.action), ['append', 'softDelete'])
+  lose = false
+  await api.flush()
+  assert.ok(adapter.calls.some((c) => c.action === 'softDelete' && (c as { id?: string }).id === rec.id))
+  assert.equal(api.status().pending, 0)
+})
+
+test('heal：[append(sawNet), softDelete] 不丟刪除（有快取、沒快取都一樣）', async () => {
+  for (const snap of [undefined, cacheOf([])]) {
+    const rec = logFields({ id: 'l-sawnet' })
+    const kv = memoryKv({
+      ...(snap ? { snapshot: snap } : {}),
+      outbox: JSON.stringify([
+        { action: 'append', table: 'Logs', record: rec, qid: 'q-app', queuedAt: rec.ts, sawNet: true },
+        { action: 'softDelete', table: 'Logs', id: rec.id, qid: 'q-del', queuedAt: rec.ts },
+      ]),
+    })
+    const storage = memoryStorage()
+    const inner = createMockAdapter({ storage, now: () => NOW })
+    inner.setOffline(true)
+    const api = createApi({ adapter: wrap(inner), storage, now: () => NOW, kv })
+    await api.ready
+    assert.deepEqual(api.outbox().map((x) => x.action), ['append', 'softDelete'])
+  }
+})
+
+test('沒有伺服器快照：upsertItem／upsertStore／upsertWeight 的刪除都送 softDelete', async () => {
+  const storage = memoryStorage()
+  const inner = createMockAdapter({ storage, now: () => NOW })
+  const adapter = wrap(inner, (op) => {
+    if (op.action.startsWith('upsert')) return Promise.resolve({ ok: false as const, error: 'bad_record', message: '壞' })
+  })
+  const api = createApi({ adapter, storage, now: () => NOW })
+  await api.ready
+  const item = itemFields({ id: 'u:nosnap', name: '豆漿' })
+  const store = storeFields({ id: 's:nosnap', name: '店' })
+  await api.upsertItem(item)
+  await api.upsertStore(store)
+  await api.upsertWeight({ id: 'w:nosnap', day: '2026-10-10', kg: 60, ts: '2026-10-10T08:00:00+08:00' })
+  assert.equal(api.failed().length, 3)
+  for (const [table, id] of [['Items', item.id], ['Stores', store.id], ['Weights', 'w:nosnap']] as const) {
+    const n = adapter.calls.length
+    await api.remove(table, id)
+    assert.ok(
+      adapter.calls.slice(n).some((c) => c.action === 'softDelete' && (c as { id?: string }).id === id),
+      table + ' 應送 softDelete',
+    )
+  }
+})
+
+test('沒有快照、沒有 sawNet 的 append 仍可本機丟掉；有快照的 upsert 也是', async () => {
+  const h = holdable()
+  const api = createApi({ adapter: h.adapter, storage: h.storage, now: () => NOW })
+  await api.ready
+  h.setHold(true)
+  const rec = logFields({ id: 'l-local' })
+  await api.appendLog(rec)
+  assert.equal(api.outbox()[0].sawNet, undefined)
+  const n = h.adapter.calls.length
+  await api.remove('Logs', rec.id)
+  assert.equal(api.outbox().length, 0)
+  assert.equal(h.adapter.calls.slice(n).some((c) => c.action === 'softDelete'), false)
+
+  // 有快照之後，從未同步的 upsertItem 也是本機丟掉
+  h.setHold(false)
+  await api.load()
+  h.setHold(true)
+  const item = itemFields({ id: 'u:snap', name: '豆漿' })
+  await api.upsertItem(item)
+  assert.equal(api.outbox()[0].sawNet, undefined)
+  await api.remove('Items', item.id)
+  assert.equal(api.outbox().length, 0)
+})
+
+test('復原刪除的店：店家和品項排在引用它的 Log 之前，補送後 Log 帶著店家', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  try {
+    const h = holdable()
+    const api = createApi({ adapter: h.adapter, storage: h.storage, now: () => NOW })
+    await api.ready
+    await api.load()
+    h.setHold(true)
+    await api.upsertStore(storeFields({ id: 's:ord', name: '新店' }))
+    await api.upsertItem(itemFields({ id: 'u:ord', name: '品', store: 's:ord' }))
+    await api.appendLog(logFields({ id: 'l:ord', store: 's:ord', name: '午餐' }))
+    await api.remove('Stores', 's:ord')
+    assert.deepEqual(api.outbox().map((x) => x.action), ['append'])
+    assert.equal(api.undoLocalDrop('Stores', 's:ord'), true)
+    assert.deepEqual(api.outbox().map((x) => x.action), ['upsertStore', 'upsertItem', 'append'])
+    const last = api.outbox()[2]
+    if (last.action !== 'append') throw new Error('expected append')
+    assert.equal(last.record.store, 's:ord')
+
+    h.setHold(false)
+    await api.flush()
+    assert.equal(api.failed().length, 0)
+    assert.equal(api.status().pending, 0)
+    const snap = await api.load()
+    assert.equal(snap.logs.find((r) => r.id === 'l:ord')?.store, 's:ord')
+    assert.ok(snap.stores?.some((s) => s.id === 's:ord'))
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('復原刪除的店：Log 已送出就不補 update（store 連結放棄）', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  try {
+    const h = holdable()
+    const api = createApi({ adapter: h.adapter, storage: h.storage, now: () => NOW })
+    await api.ready
+    await api.load()
+    h.setHold(true)
+    await api.upsertStore(storeFields({ id: 's:sent', name: '新店' }))
+    await api.appendLog(logFields({ id: 'l:sent', store: 's:sent', name: '午餐' }))
+    await api.remove('Stores', 's:sent')
+    h.setHold(false)
+    await api.flush() // Log 以沒有店家的狀態送出
+    assert.equal(api.status().pending, 0)
+    assert.equal(api.undoLocalDrop('Stores', 's:sent'), true)
+    assert.equal(api.outbox().some((x) => x.action === 'update'), false)
+    await api.flush()
+    assert.equal(h.adapter.calls.some((c) => c.action === 'update'), false)
+    assert.equal(api.failed().length, 0)
+    const snap = await api.load()
+    assert.equal(snap.logs.find((r) => r.id === 'l:sent')?.store, '')
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('localUndo 只在它改變時才寫入 kv', async () => {
+  const kv = memoryKv()
+  let writes = 0
+  const counting: typeof kv = { ...kv, set: async (k, v) => { if (k === 'localUndo') writes += 1; return kv.set(k, v) } }
+  const h = holdable()
+  const api = createApi({ adapter: h.adapter, storage: h.storage, now: () => NOW, kv: counting })
+  await api.ready
+  await api.load()
+  await api.appendLog(logFields({ id: 'l:eff1' }))
+  await api.appendLog(logFields({ id: 'l:eff2' }))
+  assert.equal(writes, 0)
+  h.setHold(true)
+  await api.appendLog(logFields({ id: 'l:eff3' }))
+  assert.equal(writes, 0)
+  await api.remove('Logs', 'l:eff3') // 本機丟掉：寫一次
+  assert.equal(writes, 1)
+  await api.markFailedNotified('x') // 不相干的持久化：不再寫
+  await api.appendLog(logFields({ id: 'l:eff4' }))
+  assert.equal(writes, 1)
+  assert.equal(api.undoLocalDrop('Logs', 'l:eff3'), true) // 復原：再寫一次
+  await api.markFailedNotified('y') // 等 undo 的持久化排完
+  assert.equal(writes, 2)
 })
