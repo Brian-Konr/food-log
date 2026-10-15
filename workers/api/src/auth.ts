@@ -4,6 +4,7 @@ import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { APIError, createAuthEndpoint } from 'better-auth/api'
 import { setSessionCookie } from 'better-auth/cookies'
+import { env as workerEnv } from 'cloudflare:workers'
 import { drizzle } from 'drizzle-orm/d1'
 import * as z from 'zod'
 import { BOT_KEY_PREFIX, BOT_METADATA } from './bot-key.ts'
@@ -52,7 +53,11 @@ function loginCode(env: Env) {
   }
 }
 
+/** How many times betterAuth() was constructed in this isolate (tests: it must not move per request). */
+export const authStats = { created: 0 }
+
 export function createAuth(env: Env, origin: string) {
+  authStats.created++
   const allowed = allowedEmails(env)
   const url = new URL(origin)
   return betterAuth({
@@ -130,14 +135,40 @@ function hash53(str: string): string {
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36)
 }
 
-// betterAuth() construction is not free (10 ms CPU limit on the free plan): build it once per isolate.
-// ONE slot keyed on the full config, so the cache can never grow with attacker-chosen input (Host header etc.).
+// betterAuth() construction is expensive: measured on the deployed spike it costs 18-33 ms CPU on a fresh isolate, over the
+// free plan's 10 ms per-request limit. Work done at module (global) scope counts as Worker startup, not as request CPU, so the
+// production instance is built right below at import time (`prewarm`) from `cloudflare:workers`' env, and requests only look it up.
+// ONE slot keyed on the full config, so the cache can never grow with attacker-chosen input (Host header etc.). In production the
+// request env always has the same values as the startup env, so every request is a hit; a different config (tests that override
+// env, or localhost dev without APP_ORIGIN, where the origin is only known from the request) rebuilds the slot lazily.
 let cached: { key: string; auth: Auth } | undefined
+
+function configKey(env: Env, origin: string): string {
+  return [origin, env.APP_ORIGIN ?? '', env.ALLOWED_EMAILS ?? '', hash53(env.BETTER_AUTH_SECRET ?? '')].join('|')
+}
+
 export function getAuth(env: Env, origin: string): Auth {
-  const key = [origin, env.APP_ORIGIN ?? '', env.ALLOWED_EMAILS ?? '', hash53(env.BETTER_AUTH_SECRET ?? '')].join('|')
+  const key = configKey(env, origin)
   if (!cached || cached.key !== key) cached = { key, auth: createAuth(env, origin) }
   return cached.auth
 }
+
+/**
+ * Build the auth instance at module load. Fail closed and never throw: without APP_ORIGIN (local dev, derived per request) or
+ * without the secret there is nothing to build yet, and a construction error must not take /api/health down with it; the
+ * request path then builds lazily exactly as before.
+ */
+function prewarm(): void {
+  try {
+    const e = workerEnv as unknown as Env
+    if (!e.APP_ORIGIN || !e.BETTER_AUTH_SECRET || !e.DB) return
+    const origin = resolveOrigin(e, e.APP_ORIGIN)
+    if (origin) getAuth(e, origin)
+  } catch (err) {
+    console.error(JSON.stringify({ type: 'auth_prewarm_failed', message: err instanceof Error ? err.message.slice(0, 300) : '' }))
+  }
+}
+prewarm()
 
 /** Auth instance for this request, or null when APP_ORIGIN is not configured outside local dev (fail closed). */
 export function authFor(env: Env, reqUrl: string): Auth | null {
