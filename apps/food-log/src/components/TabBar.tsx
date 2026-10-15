@@ -1,5 +1,5 @@
 import type { Tab } from '@/types'
-import { cn } from '@/lib/utils'
+import { cn } from '@food-log/ui'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'today', label: '今天' },

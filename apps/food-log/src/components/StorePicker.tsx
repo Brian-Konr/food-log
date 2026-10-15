@@ -1,6 +1,6 @@
 import { Store } from 'lucide-react'
 import type { StoreRecord } from '@/types'
-import { Sheet, SheetContent, SheetTitle } from './ui/sheet'
+import { Sheet, SheetContent, SheetTitle } from '@food-log/ui'
 import { StoreForm } from './StoreForm'
 
 export function StorePicker(props: {

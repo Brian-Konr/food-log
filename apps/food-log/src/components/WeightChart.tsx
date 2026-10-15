@@ -2,7 +2,7 @@ import type { WeightSeries } from '@/types'
 import { addDays } from '@/lib/day'
 import { formatKg, formatMd } from '@/lib/format'
 import { weightYTicks } from '@/lib/trends'
-import { cn } from '@/lib/utils'
+import { cn } from '@food-log/ui'
 
 export function WeightChart(props: { series: WeightSeries; today: string; spanDays: number; summary: string }) {
   const start = addDays(props.today, -(props.spanDays - 1))

@@ -16,7 +16,7 @@
 | 路徑 | 內容 |
 |---|---|
 | `src/App.tsx` | 唯一有狀態的容器：hash 路由（`#today`、`#trends`、`#items`、`#settings`、`#weight`）、toast、把畫面接到資料層 |
-| `src/screens/`、`src/components/` | 只吃 props 的展示元件，不直接呼叫資料層；`components/ui/` 是 shadcn/ui |
+| `src/screens/`、`src/components/` | 只吃 props 的展示元件，不直接呼叫資料層；shadcn/ui 元件與 `cn` 已搬到 `../../packages/ui`（`@food-log/ui`），用 `import { Sheet, cn } from '@food-log/ui'` |
 | `src/hooks/useFoodLog.ts` | 讀資料、定時重讀、`loadState`、快取、待送筆數、`failStreak` |
 | `src/api/index.ts` | 待送佇列：存在 IndexedDB（`food-log`／`kv`），依序送出。啟動時從 localStorage 遷移 |
 | `src/api/gas.ts` | Apps Script 介面卡（`GAS_TIMEOUT_MS = 55000`、`text/plain` POST） |
@@ -34,7 +34,7 @@
 | `src/lib/format.ts` | 文案與數字格式 |
 | `../../legacy/gas/` | Apps Script 後端（v2 分支搬到 legacy）：`Code.gs`（API）、`Schema.gs`（欄位、預設值）、`Setup.gs`（初始化、密鑰）、`Trends.gs`、`appsscript.json`、合併檔 `FoodLog-AppsScript.gs` |
 | `test/` | Vitest（前端測試）。GAS 測試在 `../../legacy/test/`：`gas-fakes.ts` 模擬 SpreadsheetApp、PropertiesService 等，讓 `legacy/gas/*.gs` 能在 Node 裡測；`gas-defaults`、`gas-trends-parity` 也在那裡（單向引用本目錄；本目錄不得 import `legacy/`）。food-log 不使用 Drive |
-| `scripts/` | `sync-tokens.mjs`、`build-catalog.mjs`、`fetch-fam-details.mjs`（`build-gas.mjs` 在 `../../legacy/scripts/`；部署腳本只在 `main`） |
+| `scripts/` | `build-catalog.mjs`、`fetch-fam-details.mjs`（`build-gas.mjs` 在 `../../legacy/scripts/`；部署腳本只在 `main`） |
 | `public/catalog-v1.json` | 內建品項快照。repo 裡的 `version: "fixture"` 是示意；正式檔由 `build:catalog` 覆蓋 |
 | `../../docs/spec/` | 技術規格 `v1.md`、`v1.1.md` |
 | `../../docs/design/` | `DESIGN.md`、`tokens.css`、原型 `mock/` |
@@ -47,7 +47,7 @@
 
 - 設計系統以 [`../../docs/design/DESIGN.md`](../../docs/design/DESIGN.md) 為準：行動優先、繁中、石墨色。顏色、字體、間距只用 design token，不要寫死數值。
 - 改色只改 `docs/design/mock/build.py` 再重跑；實作者**不要**改色，也不要改 `tokens.css` 的色票。
-- token 來源是 repo 的 [`../../docs/design/tokens.css`](../../docs/design/tokens.css)。`dev`／`build` 會自動同步到 `src/styles/tokens.css`；兩份都要 commit。
+- token 來源是 repo 的 [`../../docs/design/tokens.css`](../../docs/design/tokens.css)。`dev`／`build` 會用 `../../packages/ui/scripts/sync-tokens.mjs` 自動同步到 `../../packages/ui/styles/tokens.css`；兩份都要 commit。`src/index.css` 以 `@import "@food-log/ui/styles/tokens.css"` 引入，並用 `@source` 讓 Tailwind 掃 `packages/ui/src`。
 - `docs/design/mock/` 的原型只是參考，**`src/` 的 App 程式碼才是正本**。
 - 範例或示意資料必須標明是示意；本機試用模式不可以產生假的飲食紀錄。
 - 範圍先守住 v1。

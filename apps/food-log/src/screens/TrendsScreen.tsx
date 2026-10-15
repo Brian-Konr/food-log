@@ -10,7 +10,7 @@ import { KcalBarChart } from '@/components/KcalBarChart'
 import { WeightChart } from '@/components/WeightChart'
 import { SyncBadge } from '@/components/SyncBadge'
 import { SkeletonBlock } from '@/components/SkeletonBlock'
-import { cn } from '@/lib/utils'
+import { cn } from '@food-log/ui'
 
 const RANGE_UI: Record<WeightRange, string> = { '1W': '1 週', '1M': '1 個月', '3M': '3 個月' }
 const RANGE_THIS: Record<WeightRange, string> = { '1W': '這 1 週', '1M': '這 1 個月', '3M': '這 3 個月' }

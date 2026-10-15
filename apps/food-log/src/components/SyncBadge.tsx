@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { LoadState } from '@/data/loadstate'
-import { cn } from '@/lib/utils'
+import { cn } from '@food-log/ui'
 
 export function SyncBadge(props: {
   loadState: LoadState

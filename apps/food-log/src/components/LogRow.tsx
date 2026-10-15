@@ -3,7 +3,7 @@ import { AlertCircle } from 'lucide-react'
 import type { LogRecord, MergedItem, StoreRecord } from '@/types'
 import { formatHm, formatQty } from '@/lib/format'
 import { formatMacro } from '@/lib/format'
-import { cn } from '@/lib/utils'
+import { cn } from '@food-log/ui'
 
 export function LogRow(props: {
   log: LogRecord

@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { MergedItem } from '@/types'
 import { parseNonNeg } from '@/lib/nutrition'
-import { Sheet, SheetContent, SheetTitle } from './ui/sheet'
-import { cn } from '@/lib/utils'
+import { Sheet, SheetContent, SheetTitle, cn } from '@food-log/ui'
 
 const FIELDS = [
   { key: 'kcal', label: '熱量' },

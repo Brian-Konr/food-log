@@ -1,6 +1,6 @@
 import { formatInt, formatMacro } from '@/lib/format'
 import { remaining } from '@/lib/nutrition'
-import { cn } from '@/lib/utils'
+import { cn } from '@food-log/ui'
 import { SkeletonBlock } from './SkeletonBlock'
 
 export type MacroKey = 'kcal' | 'protein' | 'carb' | 'fat'

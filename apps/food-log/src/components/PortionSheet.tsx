@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LogRecord, MergedItem } from '@/types'
 import { canUseGrams, formatRemain, fromGrams, fromQty, itemMacros, lastPortion, parseNonNeg, remaining } from '@/lib/nutrition'
 import { formatMacro } from '@/lib/format'
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from './ui/sheet'
-import { cn } from '@/lib/utils'
+import { Sheet, SheetContent, SheetDescription, SheetTitle, cn } from '@food-log/ui'
 
 const QTYS = [0.5, 1, 1.5, 2] as const
 const QTY_LABEL: Record<number, string> = { 0.5: '½', 1: '1', 1.5: '1.5', 2: '2' }

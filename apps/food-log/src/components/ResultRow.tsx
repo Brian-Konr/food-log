@@ -1,6 +1,6 @@
 import type { MergedItem } from '@/types'
 import { formatMacro } from '@/lib/format'
-import { cn } from '@/lib/utils'
+import { cn } from '@food-log/ui'
 
 export function ResultRow(props: {
   item: MergedItem

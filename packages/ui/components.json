@@ -1,0 +1,21 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "styles/tokens.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "@food-log/ui/components",
+    "utils": "@food-log/ui/lib/utils",
+    "ui": "@food-log/ui/components",
+    "lib": "@food-log/ui/lib",
+    "hooks": "@food-log/ui/hooks"
+  },
+  "iconLibrary": "lucide"
+}

@@ -2,11 +2,10 @@ import { PenLine, Store } from 'lucide-react'
 import { useDeferredValue, useMemo, useRef, type RefObject } from 'react'
 import type { MergedItem, SearchFilter, StoreRecord } from '@/types'
 import { formatMd } from '@/lib/format'
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from './ui/sheet'
+import { Sheet, SheetContent, SheetDescription, SheetTitle, cn } from '@food-log/ui'
 import { ResultRow } from './ResultRow'
 import { buildIndex, emptyQueryLists, matchingStores, recentCounts, searchItems, type IndexedItem } from '@/data/search'
 import type { LogRecord } from '@/types'
-import { cn } from '@/lib/utils'
 
 const FILTERS: { id: SearchFilter; label: string }[] = [
   { id: 'all', label: '全部' },

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { MergedItem, SheetSrc } from '@/types'
-import { Sheet, SheetContent, SheetTitle } from './ui/sheet'
-import { cn } from '@/lib/utils'
+import { Sheet, SheetContent, SheetTitle, cn } from '@food-log/ui'
 
 const SRCS: SheetSrc[] = ['7-11', '全家', '其他']
 

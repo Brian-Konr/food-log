@@ -1,5 +1,5 @@
 import { formatInt } from '@/lib/format'
-import { cn } from '@/lib/utils'
+import { cn } from '@food-log/ui'
 
 export function TrendKpi(props: {
   label: string

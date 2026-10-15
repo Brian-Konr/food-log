@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { WeightRecord } from '@/types'
 import { formatKg, formatShortDate } from '@/lib/format'
-import { Sheet, SheetContent, SheetTitle } from './ui/sheet'
-import { cn } from '@/lib/utils'
+import { Sheet, SheetContent, SheetTitle, cn } from '@food-log/ui'
 
 function round1(n: number) { return Math.round(n * 10) / 10 }
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { LogRecord, MergedItem, StoreRecord } from '@/types'
 import { formatMd, formatQty, formatShortDate } from '@/lib/format'
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from './ui/sheet'
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@food-log/ui'
 import { ResultRow } from './ResultRow'
 
 function lastLogFor(itemId: string, logs: LogRecord[]): LogRecord | undefined {

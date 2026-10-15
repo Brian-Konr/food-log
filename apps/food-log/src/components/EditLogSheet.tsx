@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react'
 import type { LogRecord, MergedItem } from '@/types'
 import { canUseGrams, parseNonNeg, rescaleLog } from '@/lib/nutrition'
 import { taipeiDay } from '@/lib/day'
-import { Sheet, SheetContent, SheetTitle } from './ui/sheet'
-import { cn } from '@/lib/utils'
+import { Sheet, SheetContent, SheetTitle, cn } from '@food-log/ui'
 
 export function EditLogSheet(props: {
   open: boolean

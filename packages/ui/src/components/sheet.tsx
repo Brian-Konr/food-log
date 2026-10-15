@@ -1,6 +1,6 @@
 import * as React from "react"
-import { cn } from "@/lib/utils"
-import { PortalContainerContext } from "@/components/ui/portal-context"
+import { cn } from "../lib/utils"
+import { PortalContainerContext } from "./portal-context"
 import { Dialog as SheetPrimitive } from "radix-ui"
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {

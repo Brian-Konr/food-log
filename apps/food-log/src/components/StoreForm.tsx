@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { cn } from '@/lib/utils'
+import { cn } from '@food-log/ui'
 
 export function StoreForm(props: {
   initialName?: string

@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { cn } from '@/lib/utils'
 import { formatInt } from '@/lib/format'
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
+import { cn, Sheet, SheetContent, SheetTitle } from '@food-log/ui'
 
 const TARGETS: { key: 'target_kcal' | 'target_protein' | 'target_carb' | 'target_fat'; label: string; toast: string }[] = [
   { key: 'target_kcal', label: '熱量', toast: '已更新熱量目標' },

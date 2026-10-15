@@ -52,7 +52,7 @@ npx -y pnpm@10 --filter @food-log/app dev   # http://localhost:5173
 
 `public/catalog-v1.json` 目前是 **4 筆示意**（`version` 為 `"fixture"`），讓本機搜尋看得到東西。正式檔由 `build:catalog`（`npx -y pnpm@10 --filter @food-log/app build:catalog`）覆蓋，正式 `version` 為 `"2026-10-10"`。不要把示意檔當成完整目錄。
 
-設計 token 的來源是 repo 的 `docs/design/tokens.css`；`dev` 和 `build` 之前會自動複製到 `src/styles/`。
+設計 token 的來源是 repo 的 `docs/design/tokens.css`；`dev` 和 `build` 之前會自動複製到 `packages/ui/styles/tokens.css`（`@food-log/ui`）。
 
 ## 測試與建置
 

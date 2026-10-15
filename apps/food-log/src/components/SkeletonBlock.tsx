@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils'
+import { cn } from '@food-log/ui'
 
 export function SkeletonBlock(props: { className: string; announce?: boolean }) {
   return (
