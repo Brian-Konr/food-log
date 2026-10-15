@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { itemArgs, logArgs, storeArgs } from '../src/testing'
-import { expectErr, expectOk, newServer, row } from './helpers'
+import { errorOf, expectErr, expectOk, newServer, row } from './helpers'
 
 const ov = (over: object = {}) =>
   itemArgs({ id: 'ov:fm:1', kind: '補填', base_id: 'fm:1', src: '全家', name: '雞胸', serving: '1 包', serving_g: 100, ...over })
@@ -82,6 +82,32 @@ test('items.delete／restore：owner 可以；不存在 ignored:missing；重複
   expect(row(s, 'items', 'u:1').deleted_at).toBeNull()
   expect(expectOk(await s.mutate('items.restore@1', { id: 'u:1' }))).toEqual({ ignored: 'not_deleted' })
   expectErr(await s.asKyujin('items.delete@1', { id: 'u:1' }), 'forbidden')
+})
+
+test('items.restore：店家已刪除或不存在 → bad_record，品項維持已刪除；先 stores.restore 才能復原（有意與 Code.gs 不同）', async () => {
+  const s = newServer()
+  expectOk(await s.mutate('stores.upsert@1', storeArgs({ id: 's:1' })))
+  expectOk(await s.mutate('items.upsert@1', itemArgs({ id: 'u:1', store_id: 's:1' })))
+  expectOk(await s.mutate('stores.delete@1', { id: 's:1' })) // 連帶刪除 u:1
+  const v0 = s.db.version
+  const res = await s.mutate('items.restore@1', { id: 'u:1' })
+  expectErr(res, 'bad_record')
+  expect(errorOf(res).message).toBe('這家店已經刪除')
+  expect(row(s, 'items', 'u:1').deleted_at).not.toBeNull()
+  expect(s.db.version).toBe(v0) // 沒寫入
+  // 店家整列不存在（例如資料被清掉）也一樣
+  s.db.tables.items.set('u:2', { ...row(s, 'items', 'u:1'), id: 'u:2', store_id: 's:gone' })
+  expectErr(await s.mutate('items.restore@1', { id: 'u:2' }), 'bad_record')
+  // 先復原店家：連帶還原 u:1；之後單獨刪除再復原品項沒問題
+  expectOk(await s.mutate('stores.restore@1', { id: 's:1' }))
+  expect(row(s, 'items', 'u:1').deleted_at).toBeNull()
+  expectOk(await s.mutate('items.delete@1', { id: 'u:1' }))
+  expectOk(await s.mutate('items.restore@1', { id: 'u:1' }))
+  expect(row(s, 'items', 'u:1').deleted_at).toBeNull()
+  // 沒有店家的品項不受影響
+  expectOk(await s.mutate('items.upsert@1', itemArgs({ id: 'u:3' })))
+  expectOk(await s.mutate('items.delete@1', { id: 'u:3' }))
+  expectOk(await s.mutate('items.restore@1', { id: 'u:3' }))
 })
 
 test('logs.add 帶 item：補填與自建在同一個交易裡先寫；log.item_id 是官方 id', async () => {

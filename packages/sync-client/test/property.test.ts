@@ -23,7 +23,7 @@ const STORE_NAMES = ['阿財牛肉麵', '全家便當', '小李早餐']
 
 // ---------------------------------------------------------------- model / real
 
-type Pools = { logs: string[]; stores: string[]; weights: string[]; items: string[]; plainItems: string[] }
+type Pools = { logs: string[]; stores: string[]; weights: string[]; items: string[] }
 type Model = { counter: number; pools: Pools }
 type Real = {
   server: MemoryServer
@@ -83,7 +83,7 @@ async function setup(pageRows: number): Promise<{ model: Model; real: Real }> {
   for (let i = 0; i < N_DEVICES; i++) devices.push(await openDevice({ server, wrapStore: countingStore(() => holder.real), factory: new IDBFactory() }))
   const real: Real = { server, devices, commits: new Map(), seen: new Map(), lastServerVersion: 0, steps: [] }
   holder.real = real
-  return { model: { counter: 0, pools: { logs: [], stores: [], weights: [], items: [], plainItems: [] } }, real }
+  return { model: { counter: 0, pools: { logs: [], stores: [], weights: [], items: [] } }, real }
 }
 
 // ---------------------------------------------------------------- invariants
@@ -200,7 +200,6 @@ function buildMutation(m: Model, op: MutateOp, r1: number, r2: number): { name: 
       const id = `u:i${n}`
       p.items.push(id)
       const store_id = r2 % 4 === 0 ? undefined : pick(p.stores, r1, 's:missing')
-      if (!store_id) p.plainItems.push(id)
       return { name: 'items.upsert@1', args: { id, kind: '自建', src: '其他', name: `品項${n}`, serving: '1 份', kcal: 100, protein: 10, fat: 5, carb: 10, ...(store_id ? { store_id } : {}), ts: noonOf(day) } }
     }
     case 'item.edit': {
@@ -210,9 +209,8 @@ function buildMutation(m: Model, op: MutateOp, r1: number, r2: number): { name: 
     case 'item.delete':
       return { name: 'items.delete@1', args: { id: pick(p.items, r1, 'u:missing') } }
     case 'item.restore':
-      // 只復原沒有店家的品項：items.restore 不檢查店家有沒有被刪，會讓「未刪除的品項」出現在已刪除的店（core 的已知問題，
-      // 見下方 it.fails 的說明測試與最終報告）。要等 core 修好才能放寬。
-      return { name: 'items.restore@1', args: { id: pick(p.plainItems, r1, 'u:missing') } }
+      // 含店家品項：core 擋下「店已刪除時復活品項」（bad_record），所以任意品項都可以挑。
+      return { name: 'items.restore@1', args: { id: pick(p.items, r1, 'u:missing') } }
     case 'log.add': {
       const id = `l${n}`
       p.logs.push(id)

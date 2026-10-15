@@ -99,6 +99,12 @@ export async function runItemsRestore(tx: Tx, ctx: Ctx, a: IdArgs): Promise<Item
   const row = await tx.get('items', a.id)
   if (!row) throw notFound('找不到這筆紀錄：' + a.id)
   if (row.deleted_at === null) return { ignored: 'not_deleted' }
+  // 有意與 Code.gs 不同：店家品項不能在店已刪除（或不存在）時單獨復活，否則會出現「未刪除的品項在已刪除的店」。
+  // 要先復原店家（stores.restore 會連帶還原 cascade_of = storeId 的品項）。讀都在 put 之前。
+  if (row.store_id) {
+    const store = await tx.get('stores', row.store_id)
+    if (!store || store.deleted_at !== null) throw badRecord('這家店已經刪除')
+  }
   tx.put('items', { ...stripKeys(row), deleted_at: null, cascade_of: null, updated_at: nowIso(ctx) })
   return { rowId: a.id }
 }

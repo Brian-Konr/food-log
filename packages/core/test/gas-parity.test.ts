@@ -17,6 +17,8 @@
 //   - stores.restore 撞名回 duplicate_name、ts 必須是 +08:00、編輯一般紀錄會重驗 qty／grams（v1 沒檢查）；
 //   - logs.update 的 name 存去掉頭尾空白後的值（v1 驗證時 trim、寫入時卻寫原字串；v2 有意改善），所以案例的 name 不帶空白；
 //     v2 對這點有專屬測試（test/logs.test.ts）；
+//   - items.restore 一個店家品項時，店家已刪除或不存在 → bad_record『這家店已經刪除』（v1 的 restore_ 不檢查店家，
+//     會讓未刪除的品項出現在已刪除的店；v2 有意擋下，必須先 stores.restore）。所以案例刻意避開這種情況；專屬測試在 test/items.test.ts；
 //   - delete／restore 的 ignored 旗標：v1 只回 {ok:true}，比對時忽略，v2 的值用 step.expect 斷言。
 import { describe, expect, test } from 'vitest'
 import { KYUJIN, OWNER } from '../src/actor'
