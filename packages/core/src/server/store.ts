@@ -106,8 +106,13 @@ export type PullSnapshot = {
   errors: RecordedError[]
   meta: { epoch: string; version: number }
   /**
+   * 這次 pull 是否要從頭開始送（epoch 不同、或 cookie 比伺服器新）。**由 store 負責算一次**（用 core 的 needsReset，
+   * 因為它本來就要靠這個決定 rows 讀不讀）；pull 直接採用，不再重算。
+   */
+  reset: boolean
+  /**
    * version > afterVersion 的列（同 rowsAfter(afterVersion, limit)）。
-   * 這次 pull 需要 reset（epoch 不同、或 cookie 比伺服器新）時是 null：實作不必讀；pull 會改用 rowsAfter(0, …)。
+   * reset 時是 null：實作不必讀；pull 會改用 rowsAfter(0, …)。
    */
   rows: VersionedRow[] | null
 }

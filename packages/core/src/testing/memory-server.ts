@@ -133,11 +133,13 @@ class MemoryUserStore implements UserStore {
   private snapshot(input: PullSnapshotInput): Promise<PullSnapshot> {
     // 同步讀完 cursor／錯誤／meta／列（一個原子快照），之後才呼叫鉤子。
     const meta = { epoch: this.db.epoch, version: this.db.version }
+    const reset = needsReset(input.epoch, input.afterVersion, meta)
     const out: PullSnapshot = {
       lastMutationId: this.db.clients.get(input.clientId) ?? 0,
       errors: this.db.errors.filter((e) => e.clientId === input.clientId && e.mutationId > input.afterMutationId).sort((a, b) => a.mutationId - b.mutationId),
       meta,
-      rows: needsReset(input.epoch, input.afterVersion, meta) ? null : this.collect((v) => v > input.afterVersion).slice(0, input.limit),
+      reset,
+      rows: reset ? null : this.collect((v) => v > input.afterVersion).slice(0, input.limit),
     }
     return this.read('pullSnapshot', () => out)
   }

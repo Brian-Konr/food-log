@@ -53,11 +53,7 @@ function loginCode(env: Env) {
   }
 }
 
-/** How many times betterAuth() was constructed in this isolate (tests: it must not move per request). */
-export const authStats = { created: 0 }
-
 export function createAuth(env: Env, origin: string) {
-  authStats.created++
   const allowed = allowedEmails(env)
   const url = new URL(origin)
   return betterAuth({
@@ -153,22 +149,64 @@ export function getAuth(env: Env, origin: string): Auth {
   return cached.auth
 }
 
+/** Outcome of the module-load prewarm, reported by GET /api/health as `authPrewarm`. */
+export type AuthPrewarmStatus = 'ok' | 'skipped' | `failed:${string}`
+
+let prewarmStatus: AuthPrewarmStatus = 'skipped'
+
+export function authPrewarmStatus(): AuthPrewarmStatus {
+  return prewarmStatus
+}
+
+function failed(err: unknown): AuthPrewarmStatus {
+  const name = err instanceof Error ? err.name : 'Error'
+  const msg = err instanceof Error ? err.message : ''
+  return `failed:${`${name} ${msg}`.replace(/[^\w .:/-]/g, '').slice(0, 120).trim()}`
+}
+
 /**
- * Build the auth instance at module load. Fail closed and never throw: without APP_ORIGIN (local dev, derived per request) or
- * without the secret there is nothing to build yet, and a construction error must not take /api/health down with it; the
- * request path then builds lazily exactly as before.
+ * Build the auth instance at module load and report how it went. Never throws or rejects (a construction error must not take
+ * /api/health down). Fail closed: without APP_ORIGIN (local dev, derived per request) or the secret there is nothing to build
+ * yet -> 'skipped', and the request path builds lazily exactly as before.
+ *
+ * Global-scope safety (audited in better-auth 1.7.10 + passkey + api-key + drizzle adapter): construction does no async I/O, no
+ * timers and no random-value generation. betterAuth() runs init() as a promise chain that only awaits already-resolved values
+ * (drizzleAdapter(...) is a function adapter, so no dynamic import; telemetry is a no-op without BETTER_AUTH_TELEMETRY_ENDPOINT;
+ * neither plugin has an init hook; the drizzle adapter registers no schema check). Randomness (generateRandomString, generateId,
+ * crypto.randomUUID) and hashing only happen inside endpoint handlers. We still await `$context` so a rejected async init is
+ * recorded as 'failed:...', and the broken slot is dropped so the first request rebuilds it in request scope (where nothing is
+ * restricted): a global-scope-forbidden call can degrade the CPU saving, never availability.
  */
-function prewarm(): void {
+export async function prewarmAuth(e: Env): Promise<AuthPrewarmStatus> {
   try {
-    const e = workerEnv as unknown as Env
-    if (!e.APP_ORIGIN || !e.BETTER_AUTH_SECRET || !e.DB) return
+    if (!e.APP_ORIGIN || !e.BETTER_AUTH_SECRET || !e.DB) return 'skipped'
     const origin = resolveOrigin(e, e.APP_ORIGIN)
-    if (origin) getAuth(e, origin)
+    if (!origin) return 'skipped'
+    const auth = getAuth(e, origin) // synchronous part of construction: still in the caller's (global) scope
+    try {
+      await auth.$context
+    } catch (err) {
+      if (cached?.auth === auth) cached = undefined
+      throw err
+    }
+    return 'ok'
   } catch (err) {
-    console.error(JSON.stringify({ type: 'auth_prewarm_failed', message: err instanceof Error ? err.message.slice(0, 300) : '' }))
+    const status = failed(err)
+    console.error(JSON.stringify({ type: 'auth_prewarm_failed', status }))
+    return status
   }
 }
-prewarm()
+
+function startPrewarm(): Promise<AuthPrewarmStatus> {
+  try {
+    return prewarmAuth(workerEnv as unknown as Env)
+  } catch (err) {
+    return Promise.resolve(failed(err)) // e.g. reading the global env threw
+  }
+}
+void startPrewarm().then((s) => {
+  prewarmStatus = s
+})
 
 /** Auth instance for this request, or null when APP_ORIGIN is not configured outside local dev (fail closed). */
 export function authFor(env: Env, reqUrl: string): Auth | null {

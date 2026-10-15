@@ -323,10 +323,11 @@ export class D1UserStore implements UserStore {
     const lastMutationId = ((curRs as D1Result<{ c: number }>).results[0]?.c as number | undefined) ?? 0
     const errors = (errRs as D1Result<OutcomeRow>).results.map((r) => toRecordedError(clientId, r))
     let rows: VersionedRow[] | null
-    if (needsReset(epoch, afterVersion, meta)) rows = null
+    const reset = needsReset(epoch, afterVersion, meta)
+    if (reset) rows = null
     else if (meta.version <= afterVersion) rows = []
     else rows = await this.rowsUpTo(afterVersion, this.cutoffOf(edges as D1Result<{ version: number }>[]), limit)
-    return { lastMutationId, errors, meta, rows }
+    return { lastMutationId, errors, meta, reset, rows }
   }
 
   async rowsAtVersion(version: number): Promise<VersionedRow[]> {

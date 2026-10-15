@@ -1,5 +1,7 @@
 # v2 階段 0 Spike 報告
 
+> **這份是階段 0 的歷史紀錄**（spike Worker `food-log-spike`，從 `spike/v2-auth-sync` 部署，附自己的 `apps/spike` 頁面）。下面的做法、數字與「待測」項目都維持當時的樣子。**在 `v2` 分支上，`pnpm run deploy` 只部署 API（沒有靜態檔、沒有前端）**；前端要等階段 2 完成後用 `pnpm run deploy:with-app` 一起部署（見 [`v2.md`](v2.md) 第 0 節與 `workers/api/wrangler.jsonc`）。下文提到的 `pnpm --filter @food-log/api run deploy`（會 build `apps/spike`）只適用於 spike 分支。
+
 | 項目 | 內容 |
 |---|---|
 | 分支 | `spike/v2-auth-sync`（拋棄式；從含 `docs/plans/v2.md` 的 `main` 開出） |

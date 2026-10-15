@@ -31,13 +31,14 @@ export async function pull(store: UserStore, query: PullQuery, opts: PullOptions
   let meta: { epoch: string; version: number }
   let fetched: VersionedRow[]
   let after: number
+  let reset: boolean
   if (store.pullSnapshot) {
     // 快速路徑（D1：往返次數從 5 降到 1～2，見 UserStore.pullSnapshot）。cursor／錯誤／meta 同一個快照，列在它們之後。
     const snap = await store.pullSnapshot({ clientId: query.clientId, afterMutationId: query.afterMutationId, epoch: cookie.epoch, afterVersion: cookie.version, limit: limit + 1 })
     lastMutationId = snap.lastMutationId
     recorded = snap.errors
     meta = snap.meta
-    const reset = needsReset(cookie.epoch, cookie.version, meta)
+    reset = snap.reset // store 已經算過一次（needsReset），這裡不重算
     after = reset ? 0 : cookie.version
     fetched = reset || snap.rows === null ? await store.rowsAfter(after, limit + 1) : snap.rows
   } else {
@@ -46,10 +47,10 @@ export async function pull(store: UserStore, query: PullQuery, opts: PullOptions
     recorded = await store.listErrors(query.clientId, query.afterMutationId)
     // 2. meta，3. 列：版本號按提交順序遞增，meta.version 以內的列一定已經提交。
     meta = await store.readMeta()
-    after = needsReset(cookie.epoch, cookie.version, meta) ? 0 : cookie.version
+    reset = needsReset(cookie.epoch, cookie.version, meta)
+    after = reset ? 0 : cookie.version
     fetched = await store.rowsAfter(after, limit + 1)
   }
-  const reset = needsReset(cookie.epoch, cookie.version, meta)
   const errors = recorded
     .filter((e) => e.mutationId <= lastMutationId)
     .map((e) => ({
