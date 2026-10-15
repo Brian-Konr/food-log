@@ -2,7 +2,11 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import { TodayScreen } from '@/screens/TodayScreen'
-import { deriveLoadState, type LoadState } from '@/data/loadstate'
+import { AuthError, HttpError, NetworkError, TooOldError } from '@food-log/sync-client'
+import { classifyError, deriveLoadState, errorCopy, type LoadState } from '@/data/loadstate'
+import { cleanup as cleanupDom } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { mountApp, openEnv, seed, settle } from './harness'
 import type { LogRecord, MergedItem } from '@/types'
 
 afterEach(() => {
@@ -50,12 +54,27 @@ function banned(text: string) {
 }
 
 test('deriveLoadState 五態', () => {
-  const cache = { savedAt: '', serverTime: '', day: TODAY, config: {}, items: [], stores: [], logs: [], weights: [] }
-  expect(deriveLoadState({ booting: true, cache: null, fresh: false, error: null })).toBe('skeleton')
-  expect(deriveLoadState({ booting: false, cache, fresh: false, error: null })).toBe('cached-syncing')
-  expect(deriveLoadState({ booting: false, cache, fresh: true, error: null })).toBe('fresh')
-  expect(deriveLoadState({ booting: false, cache, fresh: false, error: { kind: 'offline', code: 'NET-0' } })).toBe('error-cached')
-  expect(deriveLoadState({ booting: false, cache: null, fresh: false, error: { kind: 'offline', code: 'NET-0' } })).toBe('error-empty')
+  expect(deriveLoadState({ booting: true, hasData: false, fresh: false, error: null })).toBe('skeleton')
+  expect(deriveLoadState({ booting: false, hasData: true, fresh: false, error: null })).toBe('cached-syncing')
+  expect(deriveLoadState({ booting: false, hasData: true, fresh: true, error: null })).toBe('fresh')
+  expect(deriveLoadState({ booting: false, hasData: true, fresh: false, error: { kind: 'offline', code: 'NET-0' } })).toBe('error-cached')
+  expect(deriveLoadState({ booting: false, hasData: false, fresh: false, error: { kind: 'offline', code: 'NET-0' } })).toBe('error-empty')
+  // 本機沒有伺服器資料、也還沒失敗：還是骨架，不是 fresh
+  expect(deriveLoadState({ booting: false, hasData: false, fresh: false, error: null })).toBe('skeleton')
+})
+
+test('classifyError：NET-0、API-<status>、unauthorized（錯誤物件與代碼字串都認得）', () => {
+  expect(classifyError(new NetworkError(), true)).toEqual({ kind: 'offline', code: 'NET-0' })
+  expect(classifyError('NET-0', true)).toEqual({ kind: 'offline', code: 'NET-0' })
+  expect(classifyError(new HttpError(503), true)).toEqual({ kind: 'server', code: 'API-503' })
+  expect(classifyError('API-500', true)).toEqual({ kind: 'server', code: 'API-500' })
+  expect(classifyError(new AuthError(), true)).toEqual({ kind: 'auth', code: 'unauthorized' })
+  expect(classifyError('unauthorized', true)).toEqual({ kind: 'auth', code: 'unauthorized' })
+  expect(classifyError(new TooOldError(2), true)).toEqual({ kind: 'server', code: 'client_too_old' })
+  // 瀏覽器離線一律是 NET-0
+  expect(classifyError(new HttpError(500), false)).toEqual({ kind: 'offline', code: 'NET-0' })
+  expect(errorCopy('server', 'API-503').codeLine).toBe('錯誤代碼 API-503')
+  expect(errorCopy('auth', 'unauthorized').reason).toContain('登入')
 })
 
 test('skeleton 沒有假數字、沒有 1800 英雄數字', () => {
@@ -167,4 +186,96 @@ test('兩者都沒超過：蛋白質行沒有還剩前綴', () => {
   expect(text).not.toContain('還剩 47.8')
   expect(text).toContain('47.8')
   expect(text).toContain('g 蛋白質')
+})
+
+// ---- 冷啟動：任何時間點都不能出現和真實資料不一致的數字（PRD 驗收 #10） ----
+
+function watchText() {
+  const seen: string[] = []
+  const states: string[] = []
+  const grab = () => {
+    seen.push(document.body.textContent ?? '')
+    const st = document.querySelector('[data-load-state]')?.getAttribute('data-load-state')
+    if (st && states.at(-1) !== st) states.push(st)
+  }
+  const mo = new MutationObserver(grab)
+  mo.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true })
+  grab()
+  return { seen, states, stop: () => mo.disconnect() }
+}
+
+const fakeNumber = (t: string) => /2,?000/.test(t)
+
+async function serverWithTarget1800() {
+  const env = await openEnv()
+  await seed(env.server, 'config.set@1', { key: 'target_kcal', value: '1800' })
+  return env.server
+}
+
+test('冷啟動（沒有任何本機資料）：骨架 → 同步完才有數字；全程沒有預設的 2000', async () => {
+  cleanupDom()
+  const server = await serverWithTarget1800()
+  await seed(server, 'logs.add@1', {
+    log: {
+      id: 'l1', ts: '2026-10-10T12:00:00+08:00', day: '2026-10-10', item_id: null, name: '午餐', src: '其他', qty: 1, grams: null,
+      kcal: 300, protein: 20, fat: 5, carb: 30, source: 'quick', store_id: null,
+    },
+  })
+  const env = await openEnv({ server }) // 沒有 synced：本機是空的
+  const w = watchText()
+  const { container } = mountApp(env)
+  await waitFor(() => expect(container.querySelector('[data-load-state="fresh"]')).toBeTruthy())
+  await waitFor(() => expect(container.textContent).toContain('1,500')) // 1800 − 300
+  w.stop()
+  expect(w.states[0]).toBe('skeleton') // 第一個畫面是骨架，不是數字
+  expect(w.states.at(-1)).toBe('fresh')
+  expect(w.seen.filter(fakeNumber)).toEqual([])
+  // 還沒 fresh 之前，不會說「今天還沒有紀錄」（那是伺服器說了才算）
+  const firstFresh = w.seen.findIndex((t, i) => i > 0 && t.includes('1,500'))
+  expect(w.seen.slice(0, firstFresh).filter((t) => t.includes('今天還沒有紀錄'))).toEqual([])
+})
+
+test('冷啟動又連不上：error-empty，讀不到今天的資料，沒有數字', async () => {
+  cleanupDom()
+  const env = await openEnv()
+  env.transport.online = false
+  const w = watchText()
+  const { container } = mountApp(env)
+  await waitFor(() => expect(container.querySelector('[data-load-state="error-empty"]')).toBeTruthy())
+  expect(container.textContent).toContain('讀不到今天的資料')
+  expect(container.textContent).toContain('NET-0')
+  expect(container.textContent).not.toMatch(/今天還沒有紀錄/)
+  w.stop()
+  expect(w.seen.filter(fakeNumber)).toEqual([])
+})
+
+test('伺服器 5xx 冷啟動：API-<status> 代碼', async () => {
+  cleanupDom()
+  const env = await openEnv()
+  env.transport.pull = async () => {
+    throw new HttpError(503)
+  }
+  const { container } = mountApp(env)
+  await waitFor(() => expect(container.querySelector('[data-load-state="error-empty"]')).toBeTruthy())
+  expect(container.textContent).toContain('API-503')
+})
+
+test('有本機資料、這次還沒同步成功：畫本機資料（cached-syncing／error-cached），不是 fresh，也沒有 2000', async () => {
+  cleanupDom()
+  const server = await serverWithTarget1800()
+  const env = await openEnv({ server, synced: true }) // 上次打開過
+  env.transport.online = false // 這次連不上
+  const w = watchText()
+  const { container } = mountApp(env)
+  await waitFor(() => expect(container.querySelector('[data-load-state="error-cached"]')).toBeTruthy())
+  expect(container.querySelector('[data-load-state="fresh"]')).toBeNull()
+  expect(container.textContent).toContain('1,800') // 本機的 config，不是預設值
+  expect(container.textContent).toContain('沒有同步 · 重試')
+  w.stop()
+  expect(w.seen.filter(fakeNumber)).toEqual([])
+  // 連線恢復後按重試 → fresh
+  env.transport.online = true
+  fireEvent.click(screen.getByText('沒有同步 · 重試'))
+  await settle(env)
+  await waitFor(() => expect(container.querySelector('[data-load-state="fresh"]')).toBeTruthy())
 })

@@ -1,4 +1,5 @@
-import type { ItemRecord, LogRecord, MergedItem, StoreRecord } from '@/types'
+import type { ItemRow, LogRow, StoreRow } from '@food-log/core'
+import type { LogRecord, MergedItem, StoreRecord } from '@/types'
 
 export function memoryStorage(): Storage {
   const m = new Map<string, string>()
@@ -21,15 +22,6 @@ export function logFields(p: Partial<LogRecord> & Pick<LogRecord, 'id'>): LogRec
   }
 }
 
-export function itemFields(p: Partial<ItemRecord> & Pick<ItemRecord, 'id'>): ItemRecord {
-  return {
-    ts: '2026-10-10T12:00:00+08:00', deleted: false, updated_at: '', kind: '自建', base_id: '', src: '其他',
-    name: 'x', serving: '1 份', serving_g: null, kcal: 100, protein: 10, fat: 1, carb: 2, fav: false, created_by: 'app',
-    store: '',
-    ...p,
-  }
-}
-
 export function storeFields(p: Partial<StoreRecord> & Pick<StoreRecord, 'id' | 'name'>): StoreRecord {
   return {
     ts: '2026-10-10T12:00:00+08:00', deleted: false, updated_at: '', last_eaten_at: '', created_by: 'app',
@@ -42,6 +34,33 @@ export function merged(p: Partial<MergedItem> & Pick<MergedItem, 'id' | 'name'>)
     src: 'familymart', cat: '', serving: '1 份', servingG: 100, perPack: 1, kcal: 100,
     protein: 10, fat: 1, carb: 2, fav: false, createdBy: null, override: false, needsFill: false, sheetSrc: '全家',
     storeId: '', storeName: '',
+    ...p,
+  }
+}
+
+/** 本機資料庫（packages/core）的品項列，給 mergeCatalog 的測試用。 */
+export function itemRow(p: Partial<ItemRow> & Pick<ItemRow, 'id'>): ItemRow {
+  return {
+    kind: '自建', base_id: null, src: '其他', name: 'x', serving: '1 份', serving_g: null, kcal: 100, protein: 10, fat: 1, carb: 2,
+    store_id: null, created_by: 'app', ts: '2026-10-10T12:00:00+08:00', cascade_of: null,
+    user_id: 'u', version: 1, deleted_at: null, updated_at: '',
+    ...p,
+  }
+}
+
+export function logRow(p: Partial<LogRow> & Pick<LogRow, 'id'>): LogRow {
+  return {
+    day: '2026-10-10', ts: '2026-10-10T12:00:00+08:00', item_id: 'fm:1', name: '雞胸', src: '全家', qty: 1, grams: null,
+    kcal: 106, protein: 20.8, fat: 1.5, carb: 2.3, source: 'app', store_id: null,
+    user_id: 'u', version: 1, deleted_at: null, updated_at: '',
+    ...p,
+  }
+}
+
+export function storeRow(p: Partial<StoreRow> & Pick<StoreRow, 'id' | 'name'>): StoreRow {
+  return {
+    name_norm: p.name.toLowerCase(), last_eaten_at: null, created_by: 'app', ts: '2026-10-10T12:00:00+08:00',
+    user_id: 'u', version: 1, deleted_at: null, updated_at: '',
     ...p,
   }
 }

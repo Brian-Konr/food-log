@@ -18,7 +18,7 @@ function isSecretLike(s: string): boolean {
   return false
 }
 
-// 掃 apps/food-log/src 與 packages/*/src（之後新增的 packages/core 等會自動納入）
+// 掃 apps/food-log/src 與 packages/*/src（core、sync-client、ui 都自動納入）；v2 的 workers/api/src、wrangler.jsonc 由 workers 的測試掃
 const packagesDir = resolve(root, '../../packages')
 const srcDirs = [
   join(root, 'src'),
@@ -49,8 +49,22 @@ test('build 產物（若有）沒有密鑰', () => {
   expect(hit).toEqual([])
 })
 
-test('呼叫 Apps Script 用 text/plain', () => {
-  const s = readFileSync(join(root, 'src/api/gas.ts'), 'utf8')
-  expect(s).toMatch(/text\/plain/)
-  expect(s).not.toMatch(/application\/json/)
+test('原始碼不再有 Apps Script／共享密鑰的殘留（v2 沒有後端連線設定）', () => {
+  const offenders = srcDirs
+    .flatMap(walk)
+    .filter((f) => /\.(ts|tsx)$/.test(f))
+    .filter((f) => {
+      const s = readFileSync(f, 'utf8')
+      // 清理舊鍵的 local-storage.ts 是唯一可以出現這些字串的地方
+      if (f.endsWith('lib/local-storage.ts')) return false
+      return /script\.google\.com|foodlog\.(gasUrl|secret|mock)|GAS_TIMEOUT_MS|createGasAdapter/.test(s)
+    })
+  expect(offenders).toEqual([])
+})
+
+test('API 路徑不被 Service Worker 的 navigation fallback 吃掉', () => {
+  const cfg = readFileSync(join(root, 'vite.config.ts'), 'utf8')
+  expect(cfg).toContain('navigateFallbackDenylist: [/^\\/(sync|bot|api|telemetry)\\//]')
+  expect(cfg).toMatch(/base: '\/'/)
+  expect(cfg).toMatch(/registerType: 'prompt'/)
 })
