@@ -2,7 +2,7 @@
 
 Brian 用這個手機 PWA 記飲食與體重：今天還剩多少熱量／蛋白質、四週趨勢、自建品項與常吃店家。Kyujin 用同一個後端寫店家、店家品項、`source=kyujin` 的飲食紀錄、自建品項和體重。
 
-線上版：https://brian-konr.github.io/food-log/
+線上版（v1，只讀）：https://brian-konr.github.io/food-log/；v2 由 Worker 在網域根目錄提供（部署見 `../../docs/plans/v2.md`，⛔ Brian 操作）。
 
 > 給 coding agent：請先讀 [`AGENTS.md`](AGENTS.md)。
 >
@@ -10,32 +10,28 @@ Brian 用這個手機 PWA 記飲食與體重：今天還剩多少熱量／蛋白
 
 ## 架構
 
-沒有我們自己的伺服器，全部是免費服務：
+v2：本機優先。
 
-- **前端**：靜態 PWA（Vite、React、TypeScript、Tailwind v4、shadcn/ui、`vite-plugin-pwa`），放在 GitHub Pages，來源是本 repo 的 `gh-pages` 分支。
-- **後端**：Brian 的 Google 帳號底下，一個綁定在 Google Sheet 上的 Apps Script，部署成網頁應用程式（網址結尾是 `/exec`）。
-- **資料**：存在那份 Google Sheet。沒有照片、沒有 Drive。
-- **保護**：`/exec` 網址是公開的（在 `main` 放在 `app/deploy/gas-url`），每個請求都必須帶「共享密鑰」。密鑰只存在 Apps Script 的指令碼屬性和手機的瀏覽器裡，不進 repo，也不進 build 產物。
-
-手機送出的紀錄會先存在 IndexedDB 待送佇列，送成功才移除，所以離線或 Google 很慢時也不會遺失。有快照就先畫快照並顯示「同步中」；沒有快照就畫灰條，不要出現預設的 2,000 kcal。
+- **前端**：PWA（Vite、React、TypeScript、Tailwind v4、shadcn/ui、`vite-plugin-pwa`、TanStack Router hash 路由）。畫面只讀手機上的 Dexie（IndexedDB）：記一筆先寫本機、畫面馬上更新，再由 `packages/sync-client` 排進待送佇列、推給 Worker。
+- **後端**：Cloudflare Worker + D1（`workers/api`），Brian 用 passkey／一次性登入碼登入（Better Auth），Kyujin 走 Bot API。
+- **本機試用**：沒登入時可以「先在這支手機試用」：只用本機 Dexie，不連 Worker，不會同步。
+- 沒有共享密鑰、沒有後端網址設定；前端不放任何密鑰。有本機資料就先畫並標「同步中」；沒有就畫灰條，不要出現預設的 2,000 kcal。
 
 ## 目錄
 
 ```
-src/            前端（App.tsx 是唯一有狀態的容器；screens/、components/ 是只吃 props 的畫面）
-src/api/        資料層：待送佇列（index.ts）、Apps Script 介面卡（gas.ts）、本機試用介面卡（mock.ts）
-src/data/       Sheet 列轉換（codec.ts）、預設 Config、品項快照合併、搜尋、連線狀態、IndexedDB（kv.ts）、快照（cache.ts）、載入狀態（loadstate.ts）
-src/lib/        台北日界線、營養換算、趨勢、文案格式
-test/           Vitest 單元測試（前端）
-scripts/        同步設計 token、建品項快照（v1 的部署腳本只在 main）
+src/app/        外框：Root（啟動、登入狀態）、providers、router（hash 路由）、AppShell、data（畫面資料）
+src/features/   today trends items settings weight stores search log toast（薄容器）、auth（登入）、update（更新提示）
+src/screens/、src/components/   只吃 props 的畫面與元件
+src/data/       actions（所有使用者動作與 undo）、catalog、search、network、loadstate、failures、view
+src/lib/        台北日界線、營養、趨勢（轉出 packages/core）、文案格式
+test/           Vitest：jsdom + fake-indexeddb + MemoryServer/MemoryTransport
+scripts/        同步設計 token、建品項快照
 public/         catalog-v1.json（示意快照）、icons/
-../../legacy/gas/   Apps Script 後端：Code.gs、Schema.gs、Setup.gs、Trends.gs
-                    appsscript.json、FoodLog-AppsScript.gs（四個合併成一檔，方便貼上）
-../../legacy/test/  用假的 Apps Script 環境跑 gas/ 的測試（含 GAS 對照測試）
-../../legacy/scripts/build-gas.mjs  產生合併檔
-../../docs/spec/    技術規格
-../../docs/design/  設計系統 DESIGN.md、tokens.css、原型
-../../docs/kyujin-api.md  Kyujin 範例請求
+../../packages/{core,sync-client,ui}   業務規則、同步用戶端、shadcn 元件
+../../workers/api                      Worker
+../../legacy/                          v1 的 Apps Script 與對照測試（切換滿 30 天後刪除）
+../../docs/                            規格、計畫、設計系統
 ```
 
 ## 本機開發
@@ -48,7 +44,7 @@ npx -y pnpm@10 install
 npx -y pnpm@10 --filter @food-log/app dev   # http://localhost:5173
 ```
 
-沒有設定 `VITE_GAS_URL`、也還沒在畫面上貼網址時，App 以「本機試用」模式執行：資料只存在這個瀏覽器，畫面會標「本機試用」，起始是空的飲食與體重（只有預設目標），沒有編造的紀錄。想連真的後端，就設定 `VITE_GAS_URL`（網址在 `main` 的 `app/deploy/gas-url`，v2 分支沒有這個檔）再跑 dev，第一次開啟時輸入共享密鑰（要向 Brian 拿）。注意這樣寫入的是真實資料。
+dev server 把 `/api`、`/sync`、`/telemetry` 代理到本機 Worker（`npx -y pnpm@10 --filter @food-log/api dev`，預設 `http://127.0.0.1:8787`，可用 `API_ORIGIN` 改）。沒有登入時在登入畫面選「先在這支手機試用」：資料只存在這個瀏覽器（Dexie），畫面標「本機試用」，起始是空的飲食與體重（只有預設目標），沒有編造的紀錄，不連 Worker。
 
 `public/catalog-v1.json` 目前是 **4 筆示意**（`version` 為 `"fixture"`），讓本機搜尋看得到東西。正式檔由 `build:catalog`（`npx -y pnpm@10 --filter @food-log/app build:catalog`）覆蓋，正式 `version` 為 `"2026-10-10"`。不要把示意檔當成完整目錄。
 
@@ -60,7 +56,7 @@ shadcn/ui 元件在 `packages/ui`（`@food-log/ui`）；要新增元件，在 `p
 
 ```bash
 # 在 repo 根目錄
-npx -y pnpm@10 -r test                              # 單元測試：日界線、營養、趨勢、搜尋、目錄、待送佇列、Apps Script 後端（legacy）、密鑰掃描
+npx -y pnpm@10 -r test                              # 單元測試：core、sync-client、Worker、前端（動作／啟動／路由／載入狀態）、legacy 對照、密鑰掃描
 npx -y pnpm@10 -r typecheck
 npx -y pnpm@10 --filter @food-log/app build         # 型別檢查＋產出 dist/
 npx -y pnpm@10 --filter @food-log/legacy build:gas  # 改過 legacy/gas/*.gs 後重新產生 legacy/gas/FoodLog-AppsScript.gs（測試會檢查兩邊一致）

@@ -69,7 +69,6 @@ export type LogRecord = {
   __write?: WriteStatus
   __queuedAt?: string
   __failMessage?: string
-  __groupId?: string
   __syncing?: boolean
 }
 
@@ -86,44 +85,9 @@ export type WeightRecord = {
   __failMessage?: string
 }
 
-export type ItemRecord = {
-  id: string
-  ts: string
-  deleted: boolean
-  updated_at: string
-  kind: ItemKind
-  base_id: string
-  src: SheetSrc
-  name: string
-  serving: string
-  serving_g: number | null
-  kcal: number
-  protein: number
-  fat: number
-  carb: number
-  fav: boolean
-  created_by: CreatedBy
-  store: string
-  __pending?: boolean
-  __write?: WriteStatus
-  __queuedAt?: string
-  __failMessage?: string
-  __cascade?: string
-}
 
 export type ConfigMap = Record<string, string>
 
-export type Snapshot = {
-  ok: true
-  version: number
-  serverTime: string
-  config: ConfigMap
-  items: ItemRecord[]
-  stores: StoreRecord[]
-  logs: LogRecord[]
-  weights: WeightRecord[]
-  weightDays?: number
-}
 
 export type Macros = { kcal: number; protein: number; fat: number; carb: number }
 

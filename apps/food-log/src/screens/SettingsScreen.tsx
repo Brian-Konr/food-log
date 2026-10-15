@@ -15,7 +15,8 @@ export function SettingsScreen(props: {
   onTheme: (t: 'dark' | 'light') => void
   onSetConfig: (key: string, value: string) => void
   onToast: (msg: string) => void
-  onEditConnection?: () => void
+  /** 帳號、失敗清單等區塊（v2 新增，由 features/settings 組好傳進來）。 */
+  extra?: ReactNode
   badge?: ReactNode
   failedKeys?: Record<string, { onRetry?: () => void; onDiscard: () => void; message?: string }>
 }) {
@@ -129,14 +130,7 @@ export function SettingsScreen(props: {
           </button>
         ))}
       </div>
-      {props.onEditConnection && (
-        <>
-          <h2 className="mt-6 text-muted-foreground">連線</h2>
-          <button type="button" className="mt-2 flex min-h-[52px] w-full items-center justify-between rounded-2xl bg-card px-4" onClick={props.onEditConnection}>
-            <span>後端連線設定</span><span className="text-muted-foreground">›</span>
-          </button>
-        </>
-      )}
+      {props.extra}
       <Sheet open={!!edit} onOpenChange={(o) => { if (!o) setEdit(null) }}>
         <SheetContent>
           <div className="px-4 pb-4">

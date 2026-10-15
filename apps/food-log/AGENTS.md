@@ -15,22 +15,17 @@
 
 | 路徑 | 內容 |
 |---|---|
-| `src/App.tsx` | 唯一有狀態的容器：hash 路由（`#today`、`#trends`、`#items`、`#settings`、`#weight`）、toast、把畫面接到資料層 |
+| `src/app/` | 外框：`Root.tsx`（啟動：試用／登入／離線打開、401 重新登入、登出）、`providers.tsx`、`router.tsx`（TanStack Router，hash 路由 `#today #trends #items #settings #weight`，`history.ts` 保持不帶斜線的網址）、`AppShell.tsx`、`data.tsx`（`useAppData`：從本機 Dexie 一次讀一張同時刻的快照並算好畫面要的數字）、`ui.tsx`（哪個 Sheet 開著）、`services.tsx`（時鐘、動作、主題）、`session.ts`（這次打開是否同步成功）、`sw.ts`、`update-info.ts` |
+| `src/features/{today,trends,items,settings,weight,stores,search,log,toast}/` | 把 `useAppData()` 接到畫面元件的薄容器；`auth/`、`update/` 是登入畫面與更新提示 |
 | `src/screens/`、`src/components/` | 只吃 props 的展示元件，不直接呼叫資料層；shadcn/ui 元件與 `cn` 已搬到 `../../packages/ui`（`@food-log/ui`），用 `import { Sheet, cn } from '@food-log/ui'`。加 shadcn 元件要在 `../../packages/ui` 跑 `npx shadcn@latest add <name>`（本目錄已沒有 `components.json`），再到 `packages/ui/src/index.ts` 匯出 |
-| `src/hooks/useFoodLog.ts` | 讀資料、定時重讀、`loadState`、快取、待送筆數、`failStreak` |
-| `src/api/index.ts` | 待送佇列：存在 IndexedDB（`food-log`／`kv`），依序送出。啟動時從 localStorage 遷移 |
-| `src/api/gas.ts` | Apps Script 介面卡（`GAS_TIMEOUT_MS = 55000`、`text/plain` POST） |
-| `src/api/mock.ts` | 本機試用介面卡（沒有網址時使用）。起始是空資料，驗證規則和後端相同。`latencyMs`、`setOffline` |
-| `src/api/errors.ts` | `NetworkError`、`ServerError`。`PERMANENT_ERRORS` 含 `forbidden`、`duplicate_name`、`schema_outdated`、`read_only` |
-| `src/data/codec.ts` | Sheet 原始列和畫面型別（`src/types.ts`）之間的轉換 |
-| `src/data/defaults.ts` | 預設 Config（必須和 `../../legacy/gas/Schema.gs` 的 `DEFAULT_CONFIG` 逐字相同） |
+| `src/data/actions.ts` | 所有使用者動作（含 undo），每個都是對 `SyncClient.mutate` 的呼叫；undo 一律是反向 mutation（計畫 §3.6）。畫面不直接呼叫 `mutate` |
+| `src/data/failures.ts`、`view.ts` | 失敗清單（sync-client 的 `failed` 表）文案；core 的列 → 畫面元件用的紀錄型別（`src/types.ts`） |
+| `src/data/defaults.ts` | v1 的預設 Config，**只給 `../../legacy/test/gas-defaults.test.ts` 比對**；App 不用（v2 預設在 `packages/core`） |
 | `src/data/network.ts` | 連線狀態與橫幅規則 |
-| `src/data/catalog.ts` | 載入快照並套上 `ov:` 補填、`u:` 自建、`fav_ids`、店家 |
+| `src/data/catalog.ts` | 官方品項快照 + 本機 `ov:` 補填、`u:` 自建、`favorites`（不再有 `fav_ids`）、店家，合併成畫面清單 |
 | `src/data/search.ts` | 本機搜尋索引與計分。`SearchHit.group` 的 `'store'` 是 7-11・全家區；篩選膠囊 `'store'` 是餐廳品項 |
-| `src/data/kv.ts`、`cache.ts`、`loadstate.ts` | IndexedDB、快照、載入五態 |
-| `src/lib/day.ts` | 台北日界線、週一 |
-| `src/lib/nutrition.ts` | 份量換算、合計、剩餘 |
-| `src/lib/trends.ts` | 趨勢純函式（與 `../../legacy/gas/Trends.gs` 同一套算法） |
+| `src/data/loadstate.ts` | 載入五態與錯誤分類（`NET-0`、`API-<status>`、`unauthorized`） |
+| `src/lib/day.ts`、`nutrition.ts`、`trends.ts` | 從 `packages/core` 轉出（App、Kyujin 的 summary 同一份算法）；`legacy/test` 仍從這裡引用，不要刪 |
 | `src/lib/format.ts` | 文案與數字格式 |
 | `../../legacy/gas/` | Apps Script 後端（v2 分支搬到 legacy）：`Code.gs`（API）、`Schema.gs`（欄位、預設值）、`Setup.gs`（初始化、密鑰）、`Trends.gs`、`appsscript.json`、合併檔 `FoodLog-AppsScript.gs` |
 | `test/` | Vitest（前端測試）。GAS 測試在 `../../legacy/test/`：`gas-fakes.ts` 模擬 SpreadsheetApp、PropertiesService 等，讓 `legacy/gas/*.gs` 能在 Node 裡測；`gas-defaults`、`gas-trends-parity` 也在那裡（單向引用本目錄；本目錄不得 import `legacy/`）。food-log 不使用 Drive |
@@ -41,7 +36,7 @@
 | `../../docs/kyujin-api.md` | Kyujin 範例請求 |
 | `deploy/gas-url` | **只在 `main`**（`app/deploy/gas-url`）：目前的 `/exec` 網址（公開，不是秘密）。v2 分支沒有這個檔案 |
 
-畫面元件只接收 props，不呼叫 `createApi`。只有 `App.tsx` 和 `useFoodLog` 碰資料層。
+畫面元件只接收 props。只有 `src/app/data.tsx`（讀）、`src/data/actions.ts`（寫）和 features 的容器碰 sync-client。
 
 ## 設計與產品原則
 
@@ -54,6 +49,8 @@
 
 ## 資料模型與 API 合約
 
+> **v2（階段 2 之後）**：資料在手機的 Dexie，前端只認 `packages/sync-client`（`SyncClient.mutate` 寫、hooks 讀）；同步協定與 mutation 目錄見 [`../../docs/plans/v2.md`](../../docs/plans/v2.md) §3，登入見 PRD §7。沒有 Apps Script 介面卡、沒有共享密鑰、沒有 `read_only`。下面這節是 v1 的欄位與 API 說明，只在讀 `legacy/` 時參考。
+
 - Sheet 分頁與欄位定義在 `../../legacy/gas/Schema.gs` 的 `SCHEMA`，說明在 README 的「Sheet 分頁與欄位」和 `../../docs/spec/v1.md`。
 - 五個分頁：Items（主鍵 `id`）、Logs（主鍵 `id`）、Weights（主鍵 `day`）、Stores（主鍵 `id`）、Config（主鍵 `key`）。Items 最後加 `store`；Logs 最後加 `source`、`store`。Items／Logs／Stores／Weights 的文字欄（含 `src`、`day`、`id`、`ts`、`updated_at`）寫入前要 `setNumberFormat('@')` 再 `setValues`。不要用 `appendRow` 寫這些分頁，否則試算表會把 `'7-11'` 和 `'YYYY-MM-DD'` 收成 Date。
 - 前端一律 `POST`、`Content-Type: text/plain`，body 是 `{ secret, action, ... }`。action 有 `read`、`append`、`update`、`softDelete`、`restore`、`upsertItem`、`upsertStore`、`upsertWeight`、`setConfig`、`history`、`summary`、`trends`。參數與回傳見 README 的 API 表和 `../../legacy/gas/Code.gs` 檔頭。`history`、`summary`、`trends` 不進待送佇列。`read` 回 `stores`（沒有就當 `[]`）。
@@ -62,12 +59,12 @@
 
 ## 不可破壞的規則
 
-1. **前端不放任何私密 token 或密鑰。** 共享密鑰只由使用者在手機上輸入。`test/security.test.ts` 會掃原始碼和 `dist/`。`/exec` 網址不是密鑰，可以留在 `main` 的 `deploy/gas-url`。
+1. **前端不放任何私密 token 或密鑰。** 登入靠 Better Auth 的 session cookie（passkey／一次性登入碼），前端沒有任何金鑰。`test/security.test.ts` 會掃原始碼和 `dist/`。`/exec` 網址不是密鑰，可以留在 `main` 的 `deploy/gas-url`。
 2. **密鑰、token 都不進 repo。** repo 是公開的。
 3. **寫入必須冪等。** 每筆紀錄的 `id` 在前端產生，後端遇到重複 id 視為成功。逾時後重送不能變成兩筆。例外只有體重：同一天第二筆新 id 會覆寫公斤數，Sheet 仍只有一筆未刪除的列；重送舊 id 不改儲存格。
-4. **所有請求最長等 55 秒**（`GAS_TIMEOUT_MS`）。不要把逾時調短。
+4. **同步請求最長等 15 秒**（sync-client 的 `REQUEST_TIMEOUT_MS`）。寫入先進本機，不等網路（v1 的 55 秒已經沒有了）。
 5. **離線佇列不能默默丟資料。** 送不出去的紀錄留在手機 IndexedDB。暫時失敗後依序等 2 秒、5 秒、15 秒各自動 `flush` 一次；三次之後等回到前景或 `online` 再試。永久錯誤不進這個計時器。
-6. **連線橫幅**：瀏覽器 `navigator.onLine === false` 立刻顯示「連不到 Google 試算表」。背景讀取失敗一次不顯示，15 秒後重讀；沒有快取且連續失敗 2 次才顯示。有快取的讀取失敗不顯示橫幅，用頂列 `SyncBadge`。寫入的 `NetworkError`（含 55 秒逾時）一次不把 `online` 設成 false、不顯示橫幅；同一筆留在佇列，依序再等 2 秒、5 秒、15 秒各試一次，三次都失敗才顯示橫幅。不要因為佇列裡有紀錄就把一次寫入失敗當成斷線。
+6. **連線橫幅**：瀏覽器 `navigator.onLine === false` 立刻顯示「連不到伺服器」。同步失敗一次不顯示；本機沒有伺服器資料且連續失敗 2 次才顯示。本機有資料時的同步失敗不顯示橫幅，用頂列 `SyncBadge`。寫入的 `NetworkError`（含 15 秒逾時）一次不把 `online` 設成 false、不顯示橫幅；同一筆留在佇列，依序再等 2 秒、5 秒、15 秒各試一次，三次都失敗才顯示橫幅。不要因為佇列裡有紀錄就把一次寫入失敗當成斷線。
 7. **後端寫入用 `LockService` 包住（等 10 秒）**。飲食紀錄只 append 和軟刪除（`deleted=TRUE`）。
 8. **`src/data/defaults.ts` 和 `legacy/gas/Schema.gs` 的預設值必須一致**，`legacy/test/gas-defaults.test.ts` 會比對。`theme` 不進 Sheet。
 9. **`legacy/gas/FoodLog-AppsScript.gs` 是產生出來的**，改 `legacy/gas/*.gs` 後要跑 `npx -y pnpm@10 --filter @food-log/legacy build:gas`，`legacy/test/gas-merged.test.ts` 會檢查。
