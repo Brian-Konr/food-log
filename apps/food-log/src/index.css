@@ -1,6 +1,5 @@
-@import "@food-log/ui/styles/tokens.css";
-/* packages/ui 的原始碼在 node_modules 的 symlink 後面，Tailwind 不會自動掃，要明確指定 */
-@source "../../../packages/ui/src";
+/* tokens＋掃 packages/ui 原始碼的 @source，由 @food-log/ui 自己維護 */
+@import "@food-log/ui/styles.css";
 
 /* 實際 dock 高：上 14＋膠囊 44＋間距 10＋搜尋 48＋下 10（tokens 的 116 少算下方留白） */
 :root { --dock-h: 126px; }

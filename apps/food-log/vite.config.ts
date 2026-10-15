@@ -38,7 +38,11 @@ export default defineConfig({
       devOptions: { enabled: false },
     }),
   ],
-  resolve: { alias: { '@': path.resolve(import.meta.dirname, './src') } },
+  resolve: {
+    alias: { '@': path.resolve(import.meta.dirname, './src') },
+    // app 與 @food-log/ui 共用同一份 React，避免兩個 instance 讓 hooks／context 壞掉
+    dedupe: ['react', 'react-dom'],
+  },
   test: {
     environment: 'node',
     include: ['test/**/*.test.{ts,tsx}'],

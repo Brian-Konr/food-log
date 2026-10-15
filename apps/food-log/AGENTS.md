@@ -16,7 +16,7 @@
 | 路徑 | 內容 |
 |---|---|
 | `src/App.tsx` | 唯一有狀態的容器：hash 路由（`#today`、`#trends`、`#items`、`#settings`、`#weight`）、toast、把畫面接到資料層 |
-| `src/screens/`、`src/components/` | 只吃 props 的展示元件，不直接呼叫資料層；shadcn/ui 元件與 `cn` 已搬到 `../../packages/ui`（`@food-log/ui`），用 `import { Sheet, cn } from '@food-log/ui'` |
+| `src/screens/`、`src/components/` | 只吃 props 的展示元件，不直接呼叫資料層；shadcn/ui 元件與 `cn` 已搬到 `../../packages/ui`（`@food-log/ui`），用 `import { Sheet, cn } from '@food-log/ui'`。加 shadcn 元件要在 `../../packages/ui` 跑 `npx shadcn@latest add <name>`（本目錄已沒有 `components.json`），再到 `packages/ui/src/index.ts` 匯出 |
 | `src/hooks/useFoodLog.ts` | 讀資料、定時重讀、`loadState`、快取、待送筆數、`failStreak` |
 | `src/api/index.ts` | 待送佇列：存在 IndexedDB（`food-log`／`kv`），依序送出。啟動時從 localStorage 遷移 |
 | `src/api/gas.ts` | Apps Script 介面卡（`GAS_TIMEOUT_MS = 55000`、`text/plain` POST） |
@@ -47,7 +47,7 @@
 
 - 設計系統以 [`../../docs/design/DESIGN.md`](../../docs/design/DESIGN.md) 為準：行動優先、繁中、石墨色。顏色、字體、間距只用 design token，不要寫死數值。
 - 改色只改 `docs/design/mock/build.py` 再重跑；實作者**不要**改色，也不要改 `tokens.css` 的色票。
-- token 來源是 repo 的 [`../../docs/design/tokens.css`](../../docs/design/tokens.css)。`dev`／`build` 會用 `../../packages/ui/scripts/sync-tokens.mjs` 自動同步到 `../../packages/ui/styles/tokens.css`；兩份都要 commit。`src/index.css` 以 `@import "@food-log/ui/styles/tokens.css"` 引入，並用 `@source` 讓 Tailwind 掃 `packages/ui/src`。
+- token 來源是 repo 的 [`../../docs/design/tokens.css`](../../docs/design/tokens.css)。`dev`／`build` 會用 `../../packages/ui/scripts/sync-tokens.mjs` 自動同步到 `../../packages/ui/styles/tokens.css`；兩份都要 commit。`src/index.css` 以 `@import "@food-log/ui/styles.css"` 引入（該入口 `packages/ui/styles/index.css` 會引入 tokens，並用 `@source` 讓 Tailwind 掃 `packages/ui/src`）。
 - `docs/design/mock/` 的原型只是參考，**`src/` 的 App 程式碼才是正本**。
 - 範例或示意資料必須標明是示意；本機試用模式不可以產生假的飲食紀錄。
 - 範圍先守住 v1。

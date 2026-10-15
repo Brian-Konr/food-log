@@ -18,8 +18,22 @@ function isSecretLike(s: string): boolean {
   return false
 }
 
+// 掃 apps/food-log/src 與 packages/*/src（之後新增的 packages/core 等會自動納入）
+const packagesDir = resolve(root, '../../packages')
+const srcDirs = [
+  join(root, 'src'),
+  ...readdirSync(packagesDir)
+    .map((n) => join(packagesDir, n, 'src'))
+    .filter((d) => existsSync(d) && statSync(d).isDirectory()),
+]
+
+test('掃描範圍包含 packages/ui/src', () => {
+  expect(srcDirs).toContain(join(packagesDir, 'ui', 'src'))
+})
+
 test('前端原始碼沒有寫死的密鑰', () => {
-  const offenders = walk(join(root, 'src'))
+  const offenders = srcDirs
+    .flatMap(walk)
     .filter((f) => /\.(ts|tsx|css|json)$/.test(f))
     .filter((f) => isSecretLike(readFileSync(f, 'utf8')))
   expect(offenders).toEqual([])

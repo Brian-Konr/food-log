@@ -1,0 +1,5 @@
+/* @food-log/ui 的 CSS 入口（exports: "./styles.css"）：app 只要 @import 這一個。
+   packages/ui 的原始碼在 node_modules 的 symlink 後面，Tailwind 不會自動掃，所以在這裡明確 @source
+   （路徑相對於本檔）。 */
+@import "./tokens.css";
+@source "../src";

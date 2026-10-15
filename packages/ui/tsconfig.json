@@ -4,6 +4,7 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "types": [],
+    // 給 shadcn CLI 解析 components.json 的 alias 用（與 package.json exports 對應）；src 內部一律用相對路徑
     "paths": { "@food-log/ui/*": ["./src/*"] }
   },
   "include": ["src"]

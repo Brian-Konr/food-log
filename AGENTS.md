@@ -6,7 +6,7 @@
 
 - `apps/food-log/`：前端 PWA（由 v1 的 `app/` 搬來）。細節見 [`apps/food-log/AGENTS.md`](apps/food-log/AGENTS.md)，其中的路徑要照下面的對照改。
 - `legacy/`：v1 的 Apps Script（`legacy/gas/`）、GAS 測試（`legacy/test/`）、合併檔產生腳本（`legacy/scripts/build-gas.mjs`）。**沒有任何部署腳本**。切換滿 30 天後刪除。
-- `packages/*`、`workers/*`、`tools/*`：v2 新增（見計畫第 2 節）。`packages/ui`（`@food-log/ui`）：shadcn 元件、`cn`、`styles/tokens.css`（`scripts/sync-tokens.mjs` 從 `docs/design/tokens.css` 同步）；不建置，直接吃原始碼。加 shadcn 元件：`cd packages/ui && npx shadcn@latest add <name>`（`packages/ui/components.json`，元件寫到 `src/components/`），再在 `src/index.ts` 匯出。
+- `packages/*`、`workers/*`、`tools/*`：v2 新增（見計畫第 2 節）。`packages/ui`（`@food-log/ui`）：shadcn 元件、`cn`、`styles/tokens.css`、CSS 入口 `styles/index.css`（匯出為 `@food-log/ui/styles.css`，含 tokens 與 `@source`）（`scripts/sync-tokens.mjs` 從 `docs/design/tokens.css` 同步）；不建置，直接吃原始碼。加 shadcn 元件：`cd packages/ui && npx shadcn@latest add <name>`（唯一的 `components.json` 在 `packages/ui/`，alias 靠該套件 `tsconfig.json` 的 `paths` 解析，元件寫到 `src/components/`；**不要在 `apps/food-log/` 跑 `shadcn add`**），再在 `src/index.ts` 匯出。
 - 舊路徑對照：`app/` → `apps/food-log/`；`app/gas/` → `legacy/gas/`；`app/test/gas-*` → `legacy/test/`；`app/scripts/build-gas.mjs` → `legacy/scripts/build-gas.mjs`。
 - **v1 的部署（GitHub Pages、Apps Script）只能從 `main` 做**（`main` 的 `app/scripts/deploy-*.sh`、`app/deploy/`）。`v2` 分支刻意不放 `deploy-gh-pages.sh`、`deploy-gas.sh`、`deploy/gas-url`，以免從 `v2` 蓋掉正式的 v1。合併 `main` 時這些檔案一律忽略（見下方合併規則）。
 
@@ -38,7 +38,8 @@ npx -y pnpm@10 -r build                       # 或只建前端：--filter @food
 | `app/package-lock.json` | 忽略（v2 用 `pnpm-lock.yaml`） |
 | `app/scripts/deploy-*`、`app/deploy/**` | **一律忽略**：v1 部署只能從 `main` 做，`v2` 不放這些檔案 |
 | `app/scripts/build-gas.mjs` | 搬到 `legacy/scripts/build-gas.mjs` |
-| 其他 `app/scripts/**`、`app/{index.html,public,components.json,tsconfig*,vite.config.ts,README.md,AGENTS.md}` | 搬到 `apps/food-log/` 同名路徑（`AGENTS.md`、`README.md` 的 v2 路徑改寫要保留） |
+| 其他 `app/scripts/**`、`app/{index.html,public,tsconfig*,vite.config.ts,README.md,AGENTS.md}` | 搬到 `apps/food-log/` 同名路徑（`AGENTS.md`、`README.md` 的 v2 路徑改寫要保留） |
+| `app/components.json` | **忽略**：v2 只有 `packages/ui/components.json`；`main` 若有 shadcn 改動，手動套到那份 |
 | `docs/**` | 照 `main` 原樣合併 |
 
 其他要求：
