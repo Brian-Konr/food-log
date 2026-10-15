@@ -594,6 +594,83 @@ try {
   await pg.keyboard.press('Escape'); await wait(pg, 300)
   await shot(pg, '7-11重試')
   await pg.evaluate(() => localStorage.removeItem('foodlog.mockFailWrites'))
+
+  await pg.keyboard.press('Escape'); await wait(pg, 300)
+  await pg.reload(); await wait(pg, 1500)
+  await pg.getByRole('navigation', { name: '分頁' }).getByText('今天', { exact: true }).click(); await wait(pg, 400)
+
+  step('v1.1.4 刪除未同步紀錄不再每次 toast')
+  await pg.evaluate(() => localStorage.setItem('foodlog.mockFailWrites', '1'))
+  await pg.getByText(/^搜尋店家/).first().click(); await wait(pg, 400)
+  await pg.getByRole('button', { name: '不指定店家' }).click(); await wait(pg, 400)
+  const quickDlg = pg.getByRole('dialog')
+  await quickDlg.getByLabel('品名').fill('刪除修復豆漿')
+  await quickDlg.getByLabel('熱量').fill('100')
+  await quickDlg.getByLabel('蛋白質').fill('10')
+  await quickDlg.getByLabel('碳水').fill('10')
+  await quickDlg.getByLabel('脂肪').fill('1')
+  await pg.getByRole('button', { name: '記錄' }).last().click(); await wait(pg, 800)
+  if (!(await pg.getByText('沒有存到').count())) fail('v1.1.4 失敗新增沒有出現沒有存到')
+  await pg.getByRole('button', { name: /刪除修復豆漿/ }).first().click(); await wait(pg, 400)
+  await pg.getByRole('button', { name: '刪除' }).click(); await wait(pg, 500)
+  if (await pg.getByText('刪除失敗').count()) fail('刪除未同步紀錄不該 toast 刪除失敗')
+  const deletedToast = pg.locator('[role=status]').filter({ hasText: '已刪除 刪除修復豆漿' })
+  if (!(await deletedToast.count())) fail('沒有已刪除 toast')
+  await deletedToast.first().waitFor({ state: 'hidden', timeout: 8000 }).catch(() => {})
+  if (await pg.getByText('刪除修復豆漿').count()) fail('刪除後列還在')
+  await pg.evaluate(() => localStorage.removeItem('foodlog.mockFailWrites'))
+  for (let i = 0; i < 2; i++) {
+    await pg.reload(); await wait(pg, 1500)
+    if (await pg.getByText('刪除失敗').count()) fail('reload 後又 toast 刪除失敗')
+    if (await pg.getByText('刪除修復豆漿').count()) fail('reload 後列回來了')
+  }
+
+  const heals = []
+  const onInfo = (m) => { if (m.type() === 'info' && m.text().includes('food-log auto-heal')) heals.push(m.text()) }
+  pg.on('console', onInfo)
+  await pg.evaluate(async () => {
+    const off = new Date(Date.now() + 8 * 3600 * 1000)
+    const day = off.toISOString().slice(0, 10)
+    const ts = `${day}T12:00:00+08:00`
+    const failed = [
+      {
+        qid: 'q-app', error: 'bad_record', message: '壞', queuedAt: ts,
+        op: {
+          action: 'append', table: 'Logs',
+          record: {
+            id: 'l:ghost-delete', ts, deleted: false, updated_at: '', day,
+            item_id: '', name: '幽靈豆漿', src: '其他', qty: 1, grams: null,
+            kcal: 100, protein: 10, fat: 1, carb: 10, source: 'app', store: '',
+          },
+        },
+      },
+      {
+        qid: 'q-del', error: 'not_found', message: '找不到', queuedAt: ts,
+        op: { action: 'softDelete', table: 'Logs', id: 'l:ghost-delete' },
+      },
+    ]
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.open('food-log', 1)
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains('kv')) req.result.createObjectStore('kv')
+      }
+      req.onerror = () => reject(req.error)
+      req.onsuccess = () => {
+        const tx = req.result.transaction('kv', 'readwrite')
+        tx.objectStore('kv').put(JSON.stringify(failed), 'failed')
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => reject(tx.error)
+      }
+    })
+  })
+  await pg.reload(); await wait(pg, 1500)
+  if (!heals.some((line) => line.includes('food-log auto-heal'))) fail('沒有 auto-heal 紀錄')
+  if (await pg.getByText('刪除失敗').count()) fail('舊的 not_found 刪除又 toast')
+  if (await pg.getByText('幽靈豆漿').count()) fail('幽靈紀錄回來了')
+  await pg.reload(); await wait(pg, 1500)
+  if (await pg.getByText('刪除失敗').count()) fail('第二次開啟又 toast')
+  if (await pg.getByText('幽靈豆漿').count()) fail('第二次開啟幽靈紀錄回來了')
+  pg.off('console', onInfo)
 } finally {
   await b.close()
   stopServer()
