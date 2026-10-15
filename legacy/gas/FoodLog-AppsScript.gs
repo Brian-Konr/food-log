@@ -247,11 +247,22 @@ function ensureSheet_(ss, name, cols) {
  *
  * 前端一律用 POST + Content-Type: text/plain（避免 CORS preflight），body 是 JSON：
  *   { secret, action, client?, ... }
+ *
+ * 唯讀開關：Script Property READ_ONLY = '1' 時，所有寫入（一律經過 withLock_）回
+ * { ok:false, error:'read_only', message } 且不取鎖、不寫入；withLock_ 是唯一的檢查點，新增寫入 action 只要包在
+ * withLock_ 裡就自動受保護。唯讀時也跳過 ensureSchema_／ensureTextCols_（不 migrate），所以讀取只適用於已 migrate 的 Sheet；
+ * read、history、summary、trends 和 GET 健康檢查照常（GET 健康檢查仍會 migrate，不受此開關影響）。
+ * 屬性每個請求只讀一次。沒有這個屬性、或值不是 '1'，行為不變。
+ *
+ * error 代碼：unauthorized、bad_json、bad_action、bad_table、bad_record、not_found、busy、server_error、
+ * forbidden、duplicate_name、schema_outdated、read_only。
  */
 var API_VERSION = 1;
 var LOCK_WAIT_MS = 10000;
 var NUT_MSG = '紀錄必須有熱量、蛋白質、脂肪、碳水';
 var KYU_MSG = 'Kyujin 只能寫入自建品項或體重';
+var READ_ONLY_MSG = 'food-log 已搬到新網址，這裡只能讀';
+var readOnly_ = false; // handle_ 每個請求開頭設定一次；withLock_ 檢查
 
 function doPost(e) {
   return respond_(handle_(parseBody_(e)));
@@ -285,9 +296,12 @@ function handle_(req) {
   try {
     if (req.__parseError) return fail_('bad_json', '請求內容不是合法 JSON');
     if (!checkSecret_(req.secret)) return fail_('unauthorized', '共享密鑰不正確');
-    var schemaErr = ensureSchema_();
-    if (schemaErr) return schemaErr;
-    ensureTextCols_();
+    readOnly_ = PropertiesService.getScriptProperties().getProperty('READ_ONLY') === '1';
+    if (!readOnly_) {
+      var schemaErr = ensureSchema_();
+      if (schemaErr) return schemaErr;
+      ensureTextCols_();
+    }
     var kyujin = req.client === 'kyujin';
     switch (req.action) {
       case 'read':          return readAll_(req.since);
@@ -326,6 +340,7 @@ function checkSecret_(given) {
 }
 
 function withLock_(fn) {
+  if (readOnly_) return fail_('read_only', READ_ONLY_MSG);
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(LOCK_WAIT_MS)) return fail_('busy', '另一個人正在寫入，請再試一次');
   try {
@@ -661,14 +676,14 @@ function softDelete_(table, id, kyujin) {
   if (table !== 'Logs' && table !== 'Weights' && table !== 'Items' && table !== 'Stores') return fail_('bad_table', table);
   if (table === 'Stores' && kyujin) return fail_('forbidden', KYU_MSG);
   if ((table === 'Weights' || table === 'Items') && kyujin) return fail_('forbidden', KYU_MSG);
-  var existing = table === 'Stores' && kyujin ? null : findById_(table, id);
+  var existing = findById_(table, id);
   if (table === 'Logs' && kyujin) {
     if (!existing || logSourceOf_(existing.source) !== 'kyujin') return fail_('forbidden', KYU_MSG);
   } else if (kyujin) {
     return fail_('forbidden', KYU_MSG);
   }
-  if (!existing) existing = findById_(table, id);
-  if (!existing) return fail_('not_found', '找不到這筆紀錄：' + id);
+  // App，或已通過檢查的 Kyujin Logs：不存在、已刪除都當成功，不寫儲存格。
+  if (!existing || isDeleted_(existing)) return { ok: true };
   var sh = sheet_(table);
   var cols = header_(sh);
   var now = nowIso_();

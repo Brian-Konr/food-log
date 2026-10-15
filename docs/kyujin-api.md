@@ -233,3 +233,17 @@ curl -sS -X POST '<GAS_EXEC_URL>' \
 }
 ```
 
+
+## read_only（搬遷後的寫入）
+
+food-log 搬到新網址（v2）後，這個舊 `/exec` 會把 Script Property `READ_ONLY` 設成 `1`。之後**所有寫入**（`append`、`update`、`softDelete`、`restore`、`upsertItem`、`upsertStore`、`upsertWeight`、`setConfig`）都回 `read_only`，Sheet 不會被改；`read`、`history`、`summary`、`trends` 仍可讀。
+
+```json
+{
+  "ok": false,
+  "error": "read_only",
+  "message": "food-log 已搬到新網址，這裡只能讀"
+}
+```
+
+意思是服務已經搬家。**不要重試**（重送一定還是 `read_only`），也不要把這筆寫入排進重試佇列；把這件事告訴 Brian，由他提供新網址。

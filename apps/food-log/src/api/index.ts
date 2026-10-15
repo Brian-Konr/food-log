@@ -79,6 +79,22 @@ function recordId(op: WriteOp): string | null {
   return null
 }
 
+function opTable(op: WriteOp): 'Logs' | 'Items' | 'Stores' | 'Weights' | null {
+  if (op.action === 'append') return 'Logs'
+  if (op.action === 'upsertItem') return 'Items'
+  if (op.action === 'upsertStore') return 'Stores'
+  if (op.action === 'upsertWeight') return 'Weights'
+  if (op.action === 'update' || op.action === 'softDelete' || op.action === 'restore') return op.table
+  return null
+}
+
+function isCreate(op: WriteOp): boolean {
+  return op.action === 'append' || op.action === 'upsertItem' || op.action === 'upsertStore' || op.action === 'upsertWeight'
+}
+
+type LocalStash = { outbox: Queued[]; failed: FailedWrite[] }
+type WriteTable = 'Logs' | 'Weights' | 'Items' | 'Stores'
+
 export interface ApiOptions {
   adapter: Adapter
   storage?: Storage
@@ -100,13 +116,34 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
   let retryWave = 0
   let retryTimer: ReturnType<typeof setTimeout> | null = null
   const RETRY_GAPS_MS = [2000, 5000, 15000]
+  let failedNotified = new Set<string>()
+  let readySettled = false
+  const localUndo = new Map<string, LocalStash>()
+  let persistChain: Promise<unknown> = Promise.resolve()
 
   const status = (): ApiStatus => ({ pending: outbox.length, failed: [...failed], online, adapter: adapter.kind })
   const emit = () => { const s = status(); listeners.forEach((fn) => fn(s)) }
 
-  async function persistQueue() {
-    await kv.set('outbox', JSON.stringify(outbox))
-    await kv.set('failed', JSON.stringify(failed))
+  function pruneFailedNotified() {
+    const keep = new Set<string>()
+    for (const f of failed) keep.add(f.qid)
+    for (const stash of localUndo.values()) {
+      for (const f of stash.failed) keep.add(f.qid)
+    }
+    for (const q of [...failedNotified]) {
+      if (!keep.has(q)) failedNotified.delete(q)
+    }
+  }
+
+  function persistQueue(): Promise<void> {
+    const job = persistChain.then(async () => {
+      pruneFailedNotified()
+      await kv.set('outbox', JSON.stringify(outbox))
+      await kv.set('failed', JSON.stringify(failed))
+      await kv.set('failedNotified', JSON.stringify([...failedNotified]))
+    })
+    persistChain = job.then(() => {}, () => {})
+    return job
   }
 
   function clearRetries() {
@@ -129,6 +166,88 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
       retryTimer = null
       void flush()
     }, gap)
+  }
+
+  function relatedKeys(table: WriteTable, id: string): Set<string> {
+    const keys = new Set<string>([table + '\n' + id])
+    if (table !== 'Stores') return keys
+    const scan = (op: WriteOp) => {
+      if (op.action === 'upsertItem' && op.record.store === id) keys.add('Items\n' + op.record.id)
+      if (op.action === 'append' && op.record.store === id) keys.add('Logs\n' + op.record.id)
+    }
+    for (const q of outbox) scan(q)
+    for (const f of failed) scan(f.op)
+    return keys
+  }
+
+  function opKey(op: WriteOp): string | null {
+    const table = opTable(op)
+    const id = recordId(op)
+    if (!table || !id) return null
+    return table + '\n' + id
+  }
+
+  function takeRelated(table: WriteTable, id: string): LocalStash {
+    const keys = relatedKeys(table, id)
+    const hit = (op: WriteOp) => {
+      const k = opKey(op)
+      return !!k && keys.has(k)
+    }
+    const takenOut = outbox.filter((op) => hit(op))
+    const takenFail = failed.filter((f) => hit(f.op))
+    outbox = outbox.filter((op) => !hit(op))
+    failed = failed.filter((f) => !hit(f.op))
+    for (const q of takenOut) failedNotified.delete(q.qid)
+    for (const f of takenFail) failedNotified.delete(f.qid)
+    return { outbox: structuredClone(takenOut), failed: structuredClone(takenFail) }
+  }
+
+  function hasUnsyncedCreate(table: WriteTable, id: string): boolean {
+    const hit = (op: WriteOp) => isCreate(op) && opTable(op) === table && recordId(op) === id
+    return outbox.some((op) => hit(op)) || failed.some((f) => hit(f.op))
+  }
+
+  function dropUnsyncedCreate(table: WriteTable, id: string): { queued: boolean; qid: string } {
+    const key = `${table}:${id}`
+    if (localUndo.has(key)) return { queued: false, qid: '' }
+    const taken = takeRelated(table, id)
+    localUndo.set(key, taken)
+    emit()
+    void persistQueue()
+    return { queued: false, qid: '' }
+  }
+
+  function autoHeal(): number {
+    const drop = new Set<string>()
+    for (const f of failed) {
+      if (f.op.action === 'softDelete' && f.error === 'not_found') drop.add(f.qid)
+    }
+    const rows = [
+      ...outbox.map((op) => ({ qid: op.qid, op })),
+      ...failed.map((f) => ({ qid: f.qid, op: f.op })),
+    ]
+    const groups = new Map<string, { qid: string; op: WriteOp }[]>()
+    for (const row of rows) {
+      const table = opTable(row.op)
+      const id = recordId(row.op)
+      if (!table || !id) continue
+      const key = table + '\n' + id
+      const list = groups.get(key) ?? []
+      list.push(row)
+      groups.set(key, list)
+    }
+    for (const list of groups.values()) {
+      const hasC = list.some((r) => r.op.action === 'append' || r.op.action === 'upsertItem' || r.op.action === 'upsertStore' || r.op.action === 'upsertWeight')
+      const hasDel = list.some((r) => r.op.action === 'softDelete')
+      if (!hasC || !hasDel) continue
+      for (const r of list) drop.add(r.qid)
+    }
+    if (drop.size === 0) return 0
+    const before = outbox.length + failed.length
+    outbox = outbox.filter((op) => !drop.has(op.qid))
+    failed = failed.filter((f) => !drop.has(f.qid))
+    for (const q of drop) failedNotified.delete(q)
+    return before - outbox.length - failed.length
   }
 
   function applyOp(data: Snapshot, op: WriteOp, pending: boolean, meta?: { queuedAt?: string; failed?: boolean; message?: string; sawNet?: boolean }) {
@@ -271,8 +390,9 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
           }
           throw err
         }
-        if (isFail(res) && !PERMANENT_ERRORS.has(res.error)) { scheduleRetry(false); break }
-        if (isFail(res)) {
+        const missingDelete = isFail(res) && (rest as WriteOp).action === 'softDelete' && res.error === 'not_found'
+        if (isFail(res) && !missingDelete && !PERMANENT_ERRORS.has(res.error)) { scheduleRetry(false); break }
+        if (isFail(res) && !missingDelete) {
           const group = groupId
           const moving = group ? outbox.filter((x) => x.groupId === group) : [cur]
           const ids = new Set(moving.map((x) => x.qid))
@@ -282,6 +402,11 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
           }))]
           await persistQueue()
           continue
+        }
+        if (missingDelete) {
+          const del = rest as WriteOp & { action: 'softDelete'; table: WriteTable; id: string }
+          takeRelated(del.table, del.id)
+          localUndo.delete(`${del.table}:${del.id}`)
         }
         clearRetries()
         outbox = outbox.filter((x) => x.qid !== qid)
@@ -349,6 +474,7 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
   }
 
   const ready: Promise<void> = (async () => {
+    failedNotified = new Set(parseList<string>(await kv.get('failedNotified')))
     await migrateFromLocalStorage()
     cacheMeta = await loadCache(kv)
     if (cacheMeta) lastData = snapshotFromCache(cacheMeta)
@@ -356,7 +482,13 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
     const f = parseList<FailedWrite>(await kv.get('failed'))
     if (o.length) outbox = o
     if (f.length) failed = f
+    const n = autoHeal()
+    if (n > 0) {
+      console.info('food-log auto-heal ' + n)
+      await persistQueue()
+    }
     emit()
+    readySettled = true
     void flush().catch(() => 0)
   })()
 
@@ -367,6 +499,7 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
     onStatus(fn: (s: ApiStatus) => void) { listeners.add(fn); return () => { listeners.delete(fn) } },
     peek(): Snapshot | null { return lastData ? view(lastData) : null },
     outbox(): Queued[] { return [...outbox] },
+    failed(): FailedWrite[] { return [...failed] },
     cache(): CachedSnapshot | null { return cacheMeta },
 
     async load(): Promise<Snapshot> {
@@ -412,8 +545,34 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
     updateLog(id: string, patch: Partial<LogRecord>) {
       return write({ action: 'update', table: 'Logs', id, patch: patch as Record<string, unknown> })
     },
-    remove(table: 'Logs' | 'Weights' | 'Items' | 'Stores', id: string) {
-      return write({ action: 'softDelete', table, id })
+    remove(table: WriteTable, id: string) {
+      const run = () => hasUnsyncedCreate(table, id)
+        ? dropUnsyncedCreate(table, id)
+        : write({ action: 'softDelete', table, id })
+      if (readySettled) return Promise.resolve(run())
+      return ready.then(run)
+    },
+    undoLocalDrop(table: WriteTable, id: string): boolean {
+      const key = `${table}:${id}`
+      const stash = localUndo.get(key)
+      if (!stash) return false
+      outbox = unionByQid(outbox, stash.outbox)
+      failed = unionByQid(failed, stash.failed)
+      localUndo.delete(key)
+      for (const f of stash.failed) failedNotified.add(f.qid)
+      emit()
+      void persistQueue()
+      if (stash.outbox.length > 0) void flush()
+      return true
+    },
+    async failedNotified(): Promise<string[]> {
+      await ready
+      return [...failedNotified]
+    },
+    async markFailedNotified(qid: string): Promise<void> {
+      await ready
+      failedNotified.add(qid)
+      await persistQueue()
     },
     restore(table: 'Logs' | 'Weights' | 'Items' | 'Stores', id: string) {
       return write({ action: 'restore', table, id })
@@ -446,6 +605,7 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
         const ids = new Set(moving.map((f) => f.qid))
         failed = failed.filter((f) => !ids.has(f.qid))
       }
+      for (const f of moving) failedNotified.delete(f.qid)
       outbox = [...outbox, ...moving.map((f) => {
         let op = f.op
         if (op.action === 'append') {
@@ -465,6 +625,8 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
       await ready
       const one = failed.find((f) => f.qid === qid)
       const gid = one?.groupId
+      const dropping = failed.filter((f) => f.qid === qid || (gid && f.groupId === gid))
+      for (const f of dropping) failedNotified.delete(f.qid)
       failed = failed.filter((f) => f.qid !== qid && !(gid && f.groupId === gid))
       await persistQueue()
       emit()
@@ -473,6 +635,8 @@ export function createApi({ adapter, storage, now = () => Date.now(), prefix = '
       await ready
       const one = outbox.find((x) => x.qid === qid)
       const gid = one?.groupId
+      const dropping = outbox.filter((x) => x.qid === qid || (gid && x.groupId === gid))
+      for (const x of dropping) failedNotified.delete(x.qid)
       outbox = outbox.filter((x) => x.qid !== qid && !(gid && x.groupId === gid))
       await persistQueue()
       emit()

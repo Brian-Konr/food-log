@@ -170,7 +170,7 @@ export function createMockAdapter(opts: { storage?: Storage; key?: string; now?:
         } else if (kyujin) {
           return fail('forbidden', KYU_MSG)
         }
-        if (!row) return fail('not_found', op.id)
+        if (!row || row.deleted) return { ok: true }
         const now = stamp()
         row.deleted = true
         row.updated_at = now

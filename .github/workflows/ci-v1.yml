@@ -1,0 +1,36 @@
+name: ci-v1
+
+on:
+  push:
+    branches: [main]
+    paths: ['app/**', '.github/workflows/ci-v1.yml']
+  pull_request:
+    branches: [main]
+    paths: ['app/**', '.github/workflows/ci-v1.yml']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      # v2 切換到 main 後 app/ 會被刪掉：沒有 app/ 就跳過後面的步驟（job 仍是綠的）。
+      # hashFiles 不能用在 job 層的 if，所以在步驟層判斷。
+      - id: v1
+        working-directory: .
+        run: |
+          if [ -f app/package-lock.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.v1.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - if: steps.v1.outputs.present == 'true'
+        run: npm ci
+      - if: steps.v1.outputs.present == 'true'
+        run: npm test
+      - if: steps.v1.outputs.present == 'true'
+        run: npm run build

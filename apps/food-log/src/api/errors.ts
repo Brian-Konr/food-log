@@ -10,4 +10,4 @@ export class ServerError extends Error {
   constructor(code: string, message?: string) { super(message || code); this.name = 'ServerError'; this.code = code }
 }
 /** 這些錯誤重送也不會好：移出佇列並提示使用者。其他（busy、server_error）稍後重試。 */
-export const PERMANENT_ERRORS = new Set(['bad_json', 'bad_action', 'bad_table', 'bad_record', 'not_found', 'unauthorized', 'bad_response', 'forbidden', 'duplicate_name', 'schema_outdated'])
+export const PERMANENT_ERRORS = new Set(['bad_json', 'bad_action', 'bad_table', 'bad_record', 'not_found', 'unauthorized', 'bad_response', 'forbidden', 'duplicate_name', 'schema_outdated', 'read_only'])

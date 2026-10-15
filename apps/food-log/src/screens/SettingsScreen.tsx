@@ -18,7 +18,7 @@ export function SettingsScreen(props: {
   onToast: (msg: string) => void
   onEditConnection?: () => void
   badge?: ReactNode
-  failedKeys?: Record<string, { onRetry: () => void; onDiscard: () => void }>
+  failedKeys?: Record<string, { onRetry?: () => void; onDiscard: () => void; message?: string }>
 }) {
   const [edit, setEdit] = useState<(typeof TARGETS)[number] | null>(null)
   const [val, setVal] = useState('')
@@ -76,7 +76,9 @@ export function SettingsScreen(props: {
             </button>
             {props.failedKeys?.[t.key] && (
               <div className="flex items-center gap-3 px-4 pb-2 text-destructive">
-                <button type="button" className="h-11" onClick={props.failedKeys[t.key].onRetry}>沒有存到 · 重試</button>
+                {props.failedKeys[t.key].onRetry
+                  ? <button type="button" className="h-11" onClick={props.failedKeys[t.key].onRetry}>沒有存到 · 重試</button>
+                  : <span>{props.failedKeys[t.key].message || '沒有存到'}</span>}
                 <button type="button" className="h-11" onClick={props.failedKeys[t.key].onDiscard}>捨棄</button>
               </div>
             )}
@@ -105,7 +107,9 @@ export function SettingsScreen(props: {
         {hint && <p className={cn('mt-2', tdeeN != null && tdeeN - targetKcal < 0 && 'text-[var(--over)]')}>{hint}</p>}
         {props.failedKeys?.tdee && (
           <div className="mt-2 flex items-center gap-3 text-destructive">
-            <button type="button" className="h-11" onClick={props.failedKeys.tdee.onRetry}>沒有存到 · 重試</button>
+            {props.failedKeys.tdee.onRetry
+              ? <button type="button" className="h-11" onClick={props.failedKeys.tdee.onRetry}>沒有存到 · 重試</button>
+              : <span>{props.failedKeys.tdee.message || '沒有存到'}</span>}
             <button type="button" className="h-11" onClick={props.failedKeys.tdee.onDiscard}>捨棄</button>
           </div>
         )}
