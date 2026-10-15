@@ -10,6 +10,7 @@
   "scripts": {
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "build": "pnpm -r build"
+    "build": "pnpm -r build",
+    "deploy": "pnpm --filter @food-log/api run deploy"
   }
 }

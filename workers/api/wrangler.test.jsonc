@@ -1,0 +1,10 @@
+{
+  // Used only by vitest (@cloudflare/vitest-plugin): same Worker + D1 + R2, no static assets (tests need no web build).
+  "name": "food-log-test",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [{ "binding": "DB", "database_name": "food-log-test", "database_id": "00000000-0000-0000-0000-000000000000" }],
+  "r2_buckets": [{ "binding": "EXPORTS", "bucket_name": "food-log-exports-test" }],
+  "vars": { "MIN_CLIENT_VERSION": "1" }
+}

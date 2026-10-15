@@ -1,4 +1,7 @@
 node_modules/
+.wrangler/
+.dev.vars
+.dev.vars.*
 apps/*/dist/
 apps/food-log/screens/
 *.local
@@ -7,3 +10,4 @@ docs/plans/*.log
 /qa-v1/
 /design/
 /clasp/
+workers/api/wrangler.with-app.generated.json
