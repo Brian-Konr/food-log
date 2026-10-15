@@ -440,26 +440,41 @@ Apps Script 編輯器 → 專案設定 → 指令碼屬性，新增或修改 `RE
    git fetch origin && git tag -a v1-final origin/main -m "v1 final: last commit before the v2 cutover" && git push origin v1-final
    ```
 
-2. 導向版本（`vite-plugin-pwa` 的 `selfDestroying: true`，加上一個導向 `https://food-log.brian-konr.workers.dev/` 的 `index.html`，讓舊主畫面上的 PWA 自己移除 Service Worker 並跳轉）。v1 的部署**只能從 `main` 的 `app/` 做**。建暫時的 worktree：
+2. 部署導向版本。它已經備妥在本機分支 `redirect/v1-gh-pages`（從 `main` 的 `53b2715` 開出，只有一個 commit，只改 `app/vite.config.ts` 與 `app/index.html`）：
+   - `vite.config.ts` 加 `selfDestroying: true`：新的 `sw.js` 會自己 unregister、清掉所有快取、重新載入開著的頁面，舊主畫面 App 下次打開就丟掉舊 Service Worker。
+   - `index.html` 換成靜態導向頁：`location.replace('https://food-log.brian-konr.workers.dev/' + location.hash)`（`#weight` 等 hash 會帶過去），另有一個手動連結。
+
+   部署前先看差異（應該只有那兩個檔案）：
 
    ```bash
-   git worktree add ../food-log-redirect -b redirect/v1-gh-pages v1-final
+   git diff v1-final redirect/v1-gh-pages --stat
    ```
 
-   在 `../food-log-redirect/app` 改好導向版本（selfDestroying、導向用的 index.html），本機 build 確認，再部署：
+   `v1-final` 若不是 `53b2715`（`main` 之後又有 v1 修正），先把導向分支接到 tag 上：
+
+   ```bash
+   git rebase v1-final redirect/v1-gh-pages
+   ```
+
+   v1 的部署**只能從 `main` 的 `app/` 做**。建暫時的 worktree：
+
+   ```bash
+   git worktree add ../food-log-redirect redirect/v1-gh-pages
+   ```
+
+   部署（腳本會先跑 v1 測試、build、security test，再推到 `gh-pages`）：
 
    ```bash
    cd ../food-log-redirect/app && npm ci && ./scripts/deploy-gh-pages.sh
    ```
 
-   - 這個暫時分支**不要合併回任何分支**，部署完就刪（從 v2 checkout 根目錄）：
+   - 這個分支**不要合併回任何分支**，部署完就刪 worktree（從 v2 checkout 根目錄；分支先留著，回滾演練時可以再用）：
 
      ```bash
-     git worktree remove ../food-log-redirect && git branch -D redirect/v1-gh-pages
+     git worktree remove ../food-log-redirect
      ```
 
      回滾時從 tag `v1-final` 重新部署，會用正常版本蓋掉它（第四節）。
-   - 導向版本的內容目前不在 repo 裡；要在切換日前先寫好並測過（備妥後把差異記在 `docs/` 的某處，方便回滾時對照）。
 3. 驗證：開舊的 GitHub Pages 網址，舊 App 應跳到新網址；已安裝的舊主畫面圖示開啟後也會跳轉並移除舊 Service Worker。
 
 ### 步驟 7　⛔ 改 Kyujin 提醒裡的 `#weight` 連結
