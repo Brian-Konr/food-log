@@ -1,0 +1,16 @@
+{
+  "name": "@food-log/legacy",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "v1 Apps Script 後端（gas/）與對照測試。v2 切換滿 30 天後刪除。",
+  "scripts": {
+    "test": "vitest run",
+    "build:gas": "node scripts/build-gas.mjs",
+    "deploy:gas": "./scripts/deploy-gas.sh",
+    "deploy:pages": "./scripts/deploy-gh-pages.sh"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.2"
+  }
+}

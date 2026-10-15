@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# 把 app/gas 合併檔推到正式綁定的 clasp 專案，並把現有正式 /exec 部署更新到新版本。
-# 正式專案在 /workspace/studio/projects/food-log/clasp（.clasp.json 的 rootDir 是 src），不在 app/。
+# 把 legacy/gas 合併檔推到正式綁定的 clasp 專案，並把現有正式 /exec 部署更新到新版本。
+# 正式專案在 repo 根目錄的 clasp/（.clasp.json 的 rootDir 是 src），不在 legacy/。
 # 需要本機已 clasp login。不要 commit .clasprc.json。
-# 用法：在 app/ 執行 npm run deploy:gas
+# 用法：在 legacy/ 執行 npm run deploy:gas
 # 這次實作不要執行。
 set -euo pipefail
 
-APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-ROOT_DIR="$(cd "$APP_DIR/.." && pwd)"
+LEGACY_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT_DIR="$(cd "$LEGACY_DIR/.." && pwd)"
 CLASP_DIR="$ROOT_DIR/clasp"
 CLASP_BIN="${CLASP_BIN:-/home/box/.local/bin/clasp}"
 SRC="$CLASP_DIR/src"
-MERGED="$APP_DIR/gas/FoodLog-AppsScript.gs"
+MERGED="$LEGACY_DIR/gas/FoodLog-AppsScript.gs"
 
 if [ ! -f "$CLASP_DIR/.clasp.json" ]; then
   echo "[deploy:gas] 找不到 $CLASP_DIR/.clasp.json" >&2
@@ -24,7 +24,7 @@ fi
 
 echo "[deploy:gas] npm run build:gas"
 (
-  cd "$APP_DIR"
+  cd "$LEGACY_DIR"
   npm run build:gas
 )
 if [ ! -f "$MERGED" ]; then

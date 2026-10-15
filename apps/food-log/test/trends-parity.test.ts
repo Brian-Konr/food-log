@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { loadGas } from './gas-fakes'
+import { loadGas } from '../../../legacy/test/gas-fakes'
 import { weekSummary, weightSeries } from '@/lib/trends'
 import { formatKg } from '@/lib/format'
 

@@ -178,7 +178,7 @@ test('toast 與內容欄同寬（max-w-xl）', () => {
 
 test('deploy-gas.sh 走 clasp/ 正式專案', () => {
   const here = path.dirname(fileURLToPath(import.meta.url))
-  const sh = readFileSync(path.join(here, '../scripts/deploy-gas.sh'), 'utf8')
+  const sh = readFileSync(path.join(here, '../../../legacy/scripts/deploy-gas.sh'), 'utf8')
   expect(sh).toContain('npm run build:gas')
   expect(sh).toContain('FoodLog-AppsScript.gs')
   expect(sh).toContain('Code.js')

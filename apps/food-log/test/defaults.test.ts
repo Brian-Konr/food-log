@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { loadGas } from './gas-fakes'
+import { loadGas } from '../../../legacy/test/gas-fakes'
 import { DEFAULT_CONFIG } from '@/data/defaults'
 
 test('defaults.ts 與 Schema 的 DEFAULT_CONFIG 鍵和值一致，且沒有 theme', () => {

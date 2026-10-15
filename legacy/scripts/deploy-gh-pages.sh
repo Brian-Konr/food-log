@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # 把 dist/ 發佈到 gh-pages 分支（GitHub Pages 來源：gh-pages / root）。
-# 用法：./scripts/deploy-gh-pages.sh
+# 用法：legacy/scripts/deploy-gh-pages.sh（v1 前端，仍從 apps/food-log 建置；v2 分支上僅供參考，不要部署）
 #   有設 FOOD_LOG_GITHUB_TOKEN 就用它推（只透過 credential helper，不寫進 remote URL 或檔案）；
 #   沒設就用這台電腦本來的 git 認證。
 # 遠端頁面：https://brian-konr.github.io/food-log/
 set -euo pipefail
-cd "$(dirname "$0")/.."
+LEGACY_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+APP_DIR="$LEGACY_DIR/../apps/food-log"
+cd "$APP_DIR"
 REPO="${REPO:-Brian-Konr/food-log}"
-if [ -z "${VITE_GAS_URL:-}" ] && [ -s deploy/gas-url ]; then VITE_GAS_URL="$(tr -d '[:space:]' < deploy/gas-url)"; fi
+if [ -z "${VITE_GAS_URL:-}" ] && [ -s "$LEGACY_DIR/deploy/gas-url" ]; then VITE_GAS_URL="$(tr -d '[:space:]' < "$LEGACY_DIR/deploy/gas-url")"; fi
 if [ -z "${VITE_GAS_URL:-}" ]; then
   VITE_GAS_URL="$(GH_TOKEN="${FOOD_LOG_GITHUB_TOKEN:-${GH_TOKEN:-}}" gh api "repos/$REPO/actions/variables/VITE_GAS_URL" --jq .value 2>/dev/null)" || VITE_GAS_URL=""
 fi
