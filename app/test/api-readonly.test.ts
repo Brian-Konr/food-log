@@ -46,9 +46,9 @@ test('read_only 是永久錯誤：不重試、移到 failed 並帶「已搬到�
   assert.ok(PERMANENT_ERRORS.has('read_only'))
 })
 
-test('read_only 沒帶 message 時用備用文案', async () => {
-  const { api } = setup({ ok: false, error: 'read_only' })
+test('read_only 的 message 照伺服器給的原樣帶過來（前端不另加文案）', async () => {
+  const { api } = setup({ ok: false, error: 'read_only', message: '伺服器自訂文案' })
   await api.ready
   await api.appendLog({ id: 'ro2', ...logFields })
-  assert.match(api.status().failed[0].message ?? '', /已搬到新網址/)
+  assert.equal(api.status().failed[0].message, '伺服器自訂文案')
 })

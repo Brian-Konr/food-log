@@ -11,5 +11,3 @@ export class ServerError extends Error {
 }
 /** 這些錯誤重送也不會好：移出佇列並提示使用者。其他（busy、server_error）稍後重試。 */
 export const PERMANENT_ERRORS = new Set(['bad_json', 'bad_action', 'bad_table', 'bad_record', 'not_found', 'unauthorized', 'bad_response', 'forbidden', 'duplicate_name', 'schema_outdated', 'read_only'])
-/** 後端 READ_ONLY=1（已搬到新網址）。後端會附上同樣的文案；這份是萬一沒帶 message 時的備用。 */
-export const READ_ONLY_MSG = 'food-log 已搬到新網址，這裡只能讀'

@@ -296,16 +296,18 @@ export default function App(props: AppProps = {}) {
           ? () => { void api.discardFailed(f.qid) }
           : () => { void api.retryFailed(f.qid) }
         const op = f.op
+        // read_only：服務已搬家，只顯示伺服器的訊息，不給重試（只留捨棄）
+        const msg = (fallback: string) => (f.error === 'read_only' && f.message ? f.message : fallback)
         if (op.action === 'upsertStore') {
           if (storeUi?.page === 'store' && storeUi.id === op.record.id) setStoreUi(null)
           if (storeUi?.page === 'rename' && storeUi.id === op.record.id) setStoreUi(null)
           if (storeUi?.page === 'item' && storeUi.storeId === op.record.id) setStoreUi(null)
-          showToast(`${op.record.name}沒有存到`, act, { actionLabel })
+          showToast(msg(`${op.record.name}沒有存到`), act, { actionLabel })
         } else if (op.action === 'softDelete' && op.table === 'Logs') {
           const name = logs.find((l) => l.id === op.id)?.name || '紀錄'
-          showToast(`刪除失敗，已還原 ${name}`, act, { actionLabel })
+          showToast(msg(`刪除失敗，已還原 ${name}`), act, { actionLabel })
         } else if (f.label === 'fav' || (op.action === 'setConfig' && op.key === 'fav_ids')) {
-          showToast('收藏沒有存到', act, { actionLabel })
+          showToast(msg('收藏沒有存到'), act, { actionLabel })
         }
       }
     })()
@@ -461,15 +463,16 @@ export default function App(props: AppProps = {}) {
   const failedLogCount = todayLogs.filter((l) => !l.deleted && l.__write === 'failed').length
   const weightFail = fl.failed.map((f) => {
     if (f.op.action !== 'upsertWeight') return null
-    return { kg: f.op.record.kg, onRetry: () => void fl.api?.retryFailed(f.qid) }
+    return { kg: f.op.record.kg, onRetry: f.error === 'read_only' ? undefined : () => void fl.api?.retryFailed(f.qid), message: f.error === 'read_only' ? f.message : undefined }
   }).find(Boolean) ?? null
 
-  const failedKeys: Record<string, { onRetry: () => void; onDiscard: () => void }> = {}
+  const failedKeys: Record<string, { onRetry?: () => void; onDiscard: () => void; message?: string }> = {}
   for (const f of fl.failed) {
     if (f.op.action === 'setConfig') {
       failedKeys[f.op.key] = {
-        onRetry: () => { void fl.api?.retryFailed(f.qid) },
+        onRetry: f.error === 'read_only' ? undefined : () => { void fl.api?.retryFailed(f.qid) },
         onDiscard: () => { void fl.api?.discardFailed(f.qid) },
+        message: f.error === 'read_only' ? f.message : undefined,
       }
     }
   }
@@ -727,6 +730,7 @@ export default function App(props: AppProps = {}) {
           setEditLog(null)
           showToast(`已刪除 ${log.name || '快速記錄'}`, () => dropOrReverse('Logs', log.id, 'softDelete'))
         }}
+        canRetry={(log) => !fl.failed.some((f) => f.error === 'read_only' && f.qid === failedQidForRecord(log.id))}
         onRetry={(log) => {
           const qid = failedQidForRecord(log.id)
           if (qid) void fl.api?.retryFailed(qid)

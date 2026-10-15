@@ -61,6 +61,20 @@ test('READ_ONLY=1：read、history、summary、trends 和 GET 健康檢查照常
   expect(env.get({ secret: env.secret }).ok).toBe(true)
 })
 
+test('READ_ONLY=1：讀取不跑 ensureTextCols_（不寫 Sheet、不設旗標），關掉後才補跑', () => {
+  const env = seeded()
+  env.props.delete('text_cols_version')
+  env.props.set('READ_ONLY', '1')
+  const before = env.dump()
+  expect(env.call({ action: 'read' }).ok).toBe(true)
+  expect(env.call({ action: 'summary', day: '2026-10-10' }).ok).toBe(true)
+  expect(env.props.has('text_cols_version')).toBe(false)
+  expect(env.dump()).toBe(before)
+  env.props.delete('READ_ONLY')
+  expect(env.call({ action: 'read' }).ok).toBe(true)
+  expect(env.props.has('text_cols_version')).toBe(true)
+})
+
 test('READ_ONLY=1：密鑰錯誤仍是 unauthorized，未知 action 仍是 bad_action', () => {
   const env = seeded()
   env.props.set('READ_ONLY', '1')

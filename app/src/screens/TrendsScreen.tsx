@@ -39,7 +39,7 @@ export function TrendsScreen(props: {
   onRetry: () => void
   retrying?: boolean
   staleToday?: boolean
-  weightFail?: { kg: number; onRetry: () => void } | null
+  weightFail?: { kg: number; onRetry?: () => void; message?: string } | null
   range: WeightRange
   onRange: (r: WeightRange) => void
   weightDays?: number
@@ -148,7 +148,9 @@ export function TrendsScreen(props: {
             <h2 className="font-bold">體重（kg）</h2>
             <div className="flex items-center gap-2">
               {props.weightFail && (
-                <button type="button" className="text-destructive" onClick={props.weightFail.onRetry}>{formatKg(props.weightFail.kg)} kg 沒有存到 · 重試</button>
+                props.weightFail.onRetry
+                  ? <button type="button" className="text-destructive" onClick={props.weightFail.onRetry}>{formatKg(props.weightFail.kg)} kg 沒有存到 · 重試</button>
+                  : <span className="text-destructive">{formatKg(props.weightFail.kg)} kg 沒有存到{props.weightFail.message ? ` · ${props.weightFail.message}` : ''}</span>
               )}
               <button type="button" className="h-11 px-2" onClick={props.onWeight}>＋ 記體重</button>
             </div>

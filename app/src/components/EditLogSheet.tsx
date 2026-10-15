@@ -14,6 +14,8 @@ export function EditLogSheet(props: {
   onSave: (log: LogRecord, patch: Partial<LogRecord>) => void
   onDelete: (log: LogRecord) => void
   onRetry?: (log: LogRecord) => void
+  /** 回 false 就不顯示「重試」（例如後端已唯讀）；沒給就顯示。 */
+  canRetry?: (log: LogRecord) => boolean
   onDiscard?: (log: LogRecord) => void
 }) {
   const log = props.log
@@ -60,7 +62,9 @@ export function EditLogSheet(props: {
           {failed && (
             <div className="mb-3">
               <p className="text-destructive">{log.__failMessage || '沒有存到'}</p>
-              <button type="button" aria-label="重試" className="mt-2 h-12 w-full rounded-[var(--radius)] bg-primary font-bold text-primary-foreground" onClick={() => props.onRetry?.(log)}>重試</button>
+              {props.canRetry?.(log) !== false && (
+                <button type="button" aria-label="重試" className="mt-2 h-12 w-full rounded-[var(--radius)] bg-primary font-bold text-primary-foreground" onClick={() => props.onRetry?.(log)}>重試</button>
+              )}
               <button type="button" aria-label="捨棄" className="mt-2 h-12 w-full rounded-[var(--radius)] bg-secondary font-semibold" onClick={() => props.onDiscard?.(log)}>捨棄</button>
             </div>
           )}
