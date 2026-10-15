@@ -10,7 +10,7 @@ vi.mock('@/features/auth/auth-client', async () => {
 })
 
 import { AuthError } from '@/features/auth/auth-client'
-import { AUTH_ERROR_COPY, LoginScreen } from '@/features/auth/LoginScreen'
+import { AUTH_ERROR_COPY, CANCELLED_HINT, LoginScreen } from '@/features/auth/LoginScreen'
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -41,17 +41,28 @@ test('登入中顯示忙碌狀態並鎖住按鈕，避免重複觸發', async ()
   await waitFor(() => expect((passkeyBtn() as HTMLButtonElement).disabled).toBe(false))
 })
 
-test('取消 Face ID：不顯示任何錯誤，也不呼叫 onSignedIn，可再按一次', async () => {
+test('取消 Face ID：沒有錯誤橫幅，只有溫和提示，並自動展開登入碼；可再按一次', async () => {
   m.signInWithPasskey.mockRejectedValue(new AuthError('cancelled'))
   const onSignedIn = vi.fn()
   render(<LoginScreen onSignedIn={onSignedIn} />)
+  expect(screen.queryByLabelText('登入碼')).toBeNull()
   fireEvent.click(passkeyBtn())
   await waitFor(() => expect((passkeyBtn() as HTMLButtonElement).disabled).toBe(false))
   expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByRole('status').textContent).toBe(CANCELLED_HINT)
+  expect(screen.getByLabelText('登入碼')).toBeTruthy()
   expect(onSignedIn).not.toHaveBeenCalled()
   fireEvent.click(passkeyBtn())
   await waitFor(() => expect(m.signInWithPasskey).toHaveBeenCalledTimes(2))
   expect(screen.queryByRole('alert')).toBeNull()
+})
+
+test('unsupported：顯示不支援的文案並展開登入碼', async () => {
+  m.signInWithPasskey.mockRejectedValue(new AuthError('unsupported'))
+  render(<LoginScreen onSignedIn={() => {}} />)
+  fireEvent.click(passkeyBtn())
+  expect((await screen.findByRole('alert')).textContent).toBe('這個瀏覽器不支援 passkey，請改用登入碼')
+  expect(screen.getByLabelText('登入碼')).toBeTruthy()
 })
 
 test.each(['not_allowed', 'network', 'unknown'] as const)('passkey 失敗 %s → 對應繁中文案', async (c) => {
@@ -66,20 +77,20 @@ test('登入碼區塊預設收合，展開後有欄位與 Brian 的產生碼提�
   expect(screen.queryByLabelText('登入碼')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: '用登入碼' }))
   expect(screen.getByLabelText('登入碼')).toBeTruthy()
-  expect(screen.getByLabelText(/Email/)).toBeTruthy()
-  expect(document.body.textContent).toContain('pnpm --filter @food-log/api login-code')
+  expect(screen.queryByLabelText(/Email/)).toBeNull()
+  expect(document.body.textContent).toContain('node scripts/login-code.ts --email')
+  expect(document.body.textContent).not.toContain('--filter')
 })
 
-test('登入碼流程成功 → 帶 email 與 code 呼叫、onSignedIn', async () => {
+test('登入碼流程成功 → 以 code 呼叫、onSignedIn', async () => {
   m.signInWithCode.mockResolvedValue(undefined)
   const onSignedIn = vi.fn()
   render(<LoginScreen onSignedIn={onSignedIn} />)
   fireEvent.click(screen.getByRole('button', { name: '用登入碼' }))
-  fireEvent.change(screen.getByLabelText(/Email/), { target: { value: 'me@example.com' } })
   fireEvent.change(screen.getByLabelText('登入碼'), { target: { value: 'ABCD-EFGH-JKMN' } })
   fireEvent.click(screen.getByRole('button', { name: '用登入碼登入' }))
   await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
-  expect(m.signInWithCode).toHaveBeenCalledWith('me@example.com', 'ABCD-EFGH-JKMN')
+  expect(m.signInWithCode).toHaveBeenCalledWith('ABCD-EFGH-JKMN')
 })
 
 test('登入碼錯誤 → 顯示無效或過期的文案，不呼叫 onSignedIn', async () => {

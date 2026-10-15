@@ -115,7 +115,7 @@ describe('signInWithCode', () => {
 
   test('POST 同源 redeem、帶 cookie、body 只有 code', async () => {
     const f = stubFetch(new Response(JSON.stringify({ ok: true }), { status: 200 }))
-    await authClient.signInWithCode('a@example.com', ' ABCD-EFGH-JKMN ')
+    await authClient.signInWithCode(' ABCD-EFGH-JKMN ')
     expect(f).toHaveBeenCalledTimes(1)
     const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe('/api/auth/login-code/redeem')
@@ -125,19 +125,19 @@ describe('signInWithCode', () => {
   })
   test('401 → invalid_code', async () => {
     stubFetch(new Response(JSON.stringify({ code: 'INVALID_OR_EXPIRED_CODE' }), { status: 401 }))
-    expect(await code(authClient.signInWithCode('a@example.com', 'BAD'))).toBe('invalid_code')
+    expect(await code(authClient.signInWithCode('BAD'))).toBe('invalid_code')
   })
   test('403 → not_allowed', async () => {
     stubFetch(new Response('{}', { status: 403 }))
-    expect(await code(authClient.signInWithCode('a@example.com', 'ABCD'))).toBe('not_allowed')
+    expect(await code(authClient.signInWithCode('ABCD'))).toBe('not_allowed')
   })
   test('fetch 失敗 → network', async () => {
     stubFetch(new TypeError('Failed to fetch'))
-    expect(await code(authClient.signInWithCode('a@example.com', 'ABCD'))).toBe('network')
+    expect(await code(authClient.signInWithCode('ABCD'))).toBe('network')
   })
   test('500 → unknown', async () => {
     stubFetch(new Response('', { status: 500 }))
-    expect(await code(authClient.signInWithCode('a@example.com', 'ABCD'))).toBe('unknown')
+    expect(await code(authClient.signInWithCode('ABCD'))).toBe('unknown')
   })
 })
 
@@ -162,5 +162,20 @@ describe('mapAuthError', () => {
     expect(mapAuthError(new AuthError('invalid_code'))).toBe('invalid_code')
     expect(mapAuthError('boom')).toBe('unknown')
     expect(mapAuthError({ status: 500 })).toBe('unknown')
+  })
+  test('TypeError：fetch 失敗 → network；離線 → network', () => {
+    expect(mapAuthError(new TypeError('Failed to fetch'))).toBe('network')
+    expect(mapAuthError(new TypeError('Load failed'))).toBe('network')
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    expect(mapAuthError(new TypeError('whatever'))).toBe('network')
+    vi.restoreAllMocks()
+  })
+  test('TypeError 且沒有 WebAuthn → unsupported；有 WebAuthn 的其他 TypeError → unknown', () => {
+    const err = new TypeError("undefined is not an object (evaluating 'navigator.credentials.get')")
+    expect(mapAuthError(err)).toBe('unsupported') // jsdom 沒有 PublicKeyCredential
+    vi.stubGlobal('PublicKeyCredential', class {})
+    Object.defineProperty(navigator, 'credentials', { configurable: true, value: {} })
+    expect(mapAuthError(err)).toBe('unknown')
+    Reflect.deleteProperty(navigator, 'credentials')
   })
 })

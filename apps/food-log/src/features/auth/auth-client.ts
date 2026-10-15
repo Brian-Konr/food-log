@@ -5,7 +5,7 @@ import { createAuthClient } from 'better-auth/client'
  * 前端的登入／登出封裝（Better Auth 在同源的 /api/auth/*，cookie session）。
  * 所有失敗都丟 AuthError，code 是下面五種之一，畫面只看 code。
  */
-export type AuthErrorCode = 'cancelled' | 'invalid_code' | 'not_allowed' | 'network' | 'unknown'
+export type AuthErrorCode = 'cancelled' | 'invalid_code' | 'not_allowed' | 'network' | 'unsupported' | 'unknown'
 
 export class AuthError extends Error {
   readonly code: AuthErrorCode
@@ -36,15 +36,28 @@ interface ClientError {
 
 const CANCEL_CODES = new Set(['AUTH_CANCELLED', 'REGISTRATION_CANCELLED', 'ERROR_CEREMONY_ABORTED'])
 
+/** 這個瀏覽器能不能做 WebAuthn（沒有的話 Better Auth 的 passkey 呼叫會丟 TypeError） */
+function webauthnAvailable(): boolean {
+  return typeof PublicKeyCredential !== 'undefined' && typeof navigator !== 'undefined' && !!navigator.credentials
+}
+
+/** fetch 失敗的 TypeError（Chrome "Failed to fetch"、Safari "Load failed"、Firefox "NetworkError…"） */
+function isFetchFailure(e: Error): boolean {
+  return /fetch|network|load failed/i.test(e.message) || (typeof navigator !== 'undefined' && navigator.onLine === false)
+}
+
 /** Better Auth 的 `{ error }`（或丟出的例外）→ 五種代碼之一 */
 export function mapAuthError(err: unknown): AuthErrorCode {
   if (err instanceof AuthError) return err.code
   if (err === null || typeof err !== 'object') return 'unknown'
   const e = err as ClientError
-  // 瀏覽器的 WebAuthn 被使用者取消（Face ID 取消、關掉面板）
+  // 瀏覽器的 WebAuthn 被取消。注意 iOS/WebKit 在「這台裝置沒有這個網站的 passkey」或逾時時也丟 NotAllowedError，
+  // 無法和使用者按取消分辨，所以 'cancelled' 的畫面要一併提示「可能是還沒有 passkey」。
   if (e.name === 'NotAllowedError' || e.name === 'AbortError') return 'cancelled'
-  // fetch 本身失敗（離線、DNS、連線中斷）
-  if (err instanceof TypeError) return 'network'
+  if (err instanceof TypeError) {
+    if (isFetchFailure(err)) return 'network'
+    return webauthnAvailable() ? 'unknown' : 'unsupported'
+  }
   const code = String(e.code ?? '')
   if (CANCEL_CODES.has(code) || /cancel/i.test(code)) return 'cancelled'
   if (code === 'INVALID_OR_EXPIRED_CODE') return 'invalid_code'
@@ -85,9 +98,7 @@ async function signInWithPasskey(): Promise<void> {
   if (res?.error) return fail(res.error)
 }
 
-async function signInWithCode(email: string, code: string): Promise<void> {
-  // 後端的登入碼綁定使用者，兌換時不看 email，所以不送出去（email 只是畫面上讓人確認是誰）
-  void email
+async function signInWithCode(code: string): Promise<void> {
   let res: Response
   try {
     res = await fetch('/api/auth/login-code/redeem', {
