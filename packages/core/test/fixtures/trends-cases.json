@@ -1,0 +1,33 @@
+{
+  "today": "2026-10-10",
+  "config": { "target_kcal": "2000", "target_protein": "150", "target_fat": "60", "target_carb": "200", "tdee": "2650" },
+  "cases": [
+    {
+      "name": "avg 1980 deficit 670",
+      "weekMonday": "2026-10-05",
+      "logs": [
+        { "day": "2026-10-05", "kcal": 990, "protein": 80, "fat": 0, "carb": 0, "deleted": false },
+        { "day": "2026-10-05", "kcal": 990, "protein": 80, "fat": 0, "carb": 0, "deleted": false },
+        { "day": "2026-10-06", "kcal": 990, "protein": 80, "fat": 0, "carb": 0, "deleted": false },
+        { "day": "2026-10-06", "kcal": 990, "protein": 80, "fat": 0, "carb": 0, "deleted": false },
+        { "day": "2026-10-07", "kcal": 990, "protein": 80, "fat": 0, "carb": 0, "deleted": false },
+        { "day": "2026-10-07", "kcal": 990, "protein": 80, "fat": 0, "carb": 0, "deleted": false },
+        { "day": "2026-10-08", "kcal": 990, "protein": 80, "fat": 0, "carb": 0, "deleted": false },
+        { "day": "2026-10-08", "kcal": 990, "protein": 80, "fat": 0, "carb": 0, "deleted": false },
+        { "day": "2026-10-09", "kcal": 990, "protein": 80, "fat": 0, "carb": 0, "deleted": false },
+        { "day": "2026-10-09", "kcal": 990, "protein": 80, "fat": 0, "carb": 0, "deleted": false }
+      ],
+      "weights": [],
+      "expect": { "avgKcal": 1980, "avgDeficit": 670, "proteinDenom": 6, "proteinHit": 5, "incompleteDays": 0 }
+    },
+    {
+      "name": "incomplete yesterday skipped",
+      "weekMonday": "2026-10-05",
+      "logs": [
+        { "day": "2026-10-09", "kcal": 3000, "protein": 160, "fat": 0, "carb": 0, "deleted": false }
+      ],
+      "weights": [],
+      "expect": { "avgKcal": null, "avgDeficit": null, "proteinDenom": 6, "proteinHit": 1, "incompleteDays": 5 }
+    }
+  ]
+}

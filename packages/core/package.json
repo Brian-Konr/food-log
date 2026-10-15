@@ -1,0 +1,23 @@
+{
+  "name": "@food-log/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "food-log v2 業務規則：台北日、營養與趨勢計算、zod schema、mutators、權限、同步協定與 server 處理（純 TypeScript，無 I/O、無 DOM）",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
+  }
+}
