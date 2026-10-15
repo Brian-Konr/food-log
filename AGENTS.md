@@ -12,24 +12,43 @@
 
 ## 指令
 
-pnpm 沒有全域安裝，一律用 `npx -y pnpm@10 …`（版本鎖在根 `package.json` 的 `packageManager`）。
+pnpm 沒有全域安裝，本機一律用 `npx -y pnpm@10 …`（版本鎖在根 `package.json` 的 `packageManager`）。要寫成 `npx -y pnpm@10 -r test`，不要寫 `npx pnpm test`（沒釘版本，也沒有 `-r` 就只會在根目錄跑，根目錄沒有 test）；也不要裝全域 pnpm。
 
 ```bash
 npx -y pnpm@10 install
 npx -y pnpm@10 -r typecheck
 npx -y pnpm@10 -r test
-npx -y pnpm@10 --filter @food-log/app build
+npx -y pnpm@10 -r build                       # 或只建前端：--filter @food-log/app build
 ```
+
+根 `package.json` 的 scripts（`pnpm -r test` 等）寫的是裸 `pnpm`：CI 有 pnpm（`pnpm/action-setup`），照用；本機沒有 `pnpm` 在 PATH，所以本機不要跑 `npm test` / `npm run test` 這類會呼叫裸 `pnpm` 的根 scripts，直接用上面的 `npx -y pnpm@10 -r …`。
 
 ## 合併規則（`main` → `v2`）
 
-每個階段結束、以及 `main` 有 v1 修正時，在 `v2` 執行 `git merge main`：
+每個階段結束、以及 `main` 有 v1 修正時，在 `v2` 執行 `git merge main`。`main` 的目錄是 `app/`，`v2` 沒有 `app/`，所以 git 會把 `app/**` 的新增、修改當成要在原路徑處理的衝突或新檔。**合併後逐項照下表處理**：
 
-- `main` 上 `app/gas/**` 的改動 → 對應到 `legacy/gas/**`（改完要重新產生合併檔 `legacy/gas/FoodLog-AppsScript.gs`：`npx -y pnpm@10 --filter @food-log/legacy build:gas`）。
-- `main` 上 `app/src/**` 的改動 → **手動移植**到 `apps/food-log`；被 v2 重寫的檔案以 v2 為準。
+| `main` 上的路徑 | 在 `v2` 的處理 |
+|---|---|
+| `app/gas/**` | 搬到 `legacy/gas/**`；改完重新產生合併檔：`npx -y pnpm@10 --filter @food-log/legacy build:gas` |
+| `app/test/gas-*.test.ts`、`app/test/gas-fakes.ts` | 搬到 `legacy/test/` |
+| 其他 `app/test/**`（含 `fixtures/`） | 搬到 `apps/food-log/test/`（`defaults.test.ts`、`trends-parity.test.ts` 在 `v2` 已改名為 `legacy/test/gas-defaults.test.ts`、`gas-trends-parity.test.ts`，`main` 對它們的修改要套到這兩個檔） |
+| `app/src/**` | **手動移植**到 `apps/food-log/src/**`；被 v2 重寫的檔案以 v2 為準 |
+| `app/e2e/**` | 搬到 `apps/food-log/e2e/` |
+| `app/package.json` 的依賴變動 | 套到 `apps/food-log/package.json`，再跑 `npx -y pnpm@10 install` 更新 `pnpm-lock.yaml`（不要手改 lock；`workbox-window` 維持釘在 `7.4.1`） |
+| `app/package-lock.json` | 忽略（v2 用 `pnpm-lock.yaml`） |
+| `app/scripts/deploy-*`、`app/deploy/**` | **一律忽略**：v1 部署只能從 `main` 做，`v2` 不放這些檔案 |
+| `app/scripts/build-gas.mjs` | 搬到 `legacy/scripts/build-gas.mjs` |
+| 其他 `app/scripts/**`、`app/{index.html,public,components.json,tsconfig*,vite.config.ts,README.md,AGENTS.md}` | 搬到 `apps/food-log/` 同名路徑（`AGENTS.md`、`README.md` 的 v2 路徑改寫要保留） |
+| `docs/**` | 照 `main` 原樣合併 |
+
+其他要求：
+
 - 每次合併都在 merge commit message 列出移植清單（哪些 v1 改動移植到哪裡、哪些捨棄）。
 - GAS 對照測試（`gas-defaults`、`gas-trends-parity`）放在 `legacy/test/`，由 legacy 單向引用前端（`@` → `apps/food-log/src`；黃金案例 `apps/food-log/test/fixtures/trends-cases.json`）。**`apps/food-log` 不得 import `legacy/` 的任何東西**；不要刪這些測試。
 - v1 唯讀開關等 v1 改動做在 `main`，再合併進 `v2`。
+- **合併後必做檢查（缺一不可，通過才能 commit merge）：**
+  1. `test ! -e app`：`v2` 上不得出現 `app/` 目錄（出現就代表有 `app/**` 檔案沒搬走，逐一處理後刪掉 `app/`）。
+  2. `npx -y pnpm@10 install --frozen-lockfile`、`npx -y pnpm@10 -r typecheck`、`npx -y pnpm@10 -r test` 全綠，`npx -y pnpm@10 --filter @food-log/app build` 成功。
 
 ## 紅線
 

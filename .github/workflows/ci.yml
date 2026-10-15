@@ -21,6 +21,8 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: v2 不得有 app/ 目錄（main 的 app/** 合併後要搬到 apps/food-log、legacy）
+        run: test ! -e app
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
       - run: pnpm -r test # 含 legacy 的 GAS 對照測試
