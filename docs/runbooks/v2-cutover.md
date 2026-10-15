@@ -83,7 +83,7 @@ npx -y pnpm@10 --filter @food-log/api run deploy
    ```bash
    node workers/api/scripts/bootstrap-owner.ts --email <OWNER_EMAIL> --name <顯示名稱> --remote
    ```
-   把印出的 `wrangler d1 execute … --command '…'` 貼上執行。
+   把印出的整行指令貼上執行（它已經是 `npx -y pnpm@10 --filter @food-log/api exec wrangler d1 execute food-log --remote --command '…'` 的完整形式，也就是 `WR d1 execute food-log --remote --command '…'`）。
 2. 發一次性登入碼（15 分鐘，單次有效；計時從「印出的指令實際執行」開始）：
    ```bash
    node workers/api/scripts/login-code.ts --email <OWNER_EMAIL> --remote
@@ -99,7 +99,7 @@ npx -y pnpm@10 --filter @food-log/api run deploy
 gas-client / fetch-sheet   →  抓整份 Sheet（read，再用 history 往回翻到底）
 transform                  →  純函式轉換，anomalies[] 列出所有調整
 emit-sql                   →  產生 SQL（依 id upsert）
-wrangler d1 execute --remote --file <emit-sql 的輸出檔>
+WR d1 execute food-log --remote --file <emit-sql 的輸出檔>
 verify                     →  比對兩邊
 ```
 
@@ -159,6 +159,8 @@ exports/<DAY>/logs.part-N.csv       只有 part 1 有 BOM 與表頭
    - 沒有 `--db` 就在記憶體裡跑；有 `--db` 會建一個全新的 SQLite 檔（已存在會拒絕，避免蓋掉東西）。
    - 它先套用 `workers/api/migrations/*.sql`（依序），再載入每張表的 part 檔，然後輸出：每張表的「manifest 列數／part 內列數／未刪除／已刪除」、logs 每日 kcal／protein／fat／carb 加總、每日體重筆數。加總會在 part 檔、`logs.csv`、還原後的資料庫三方互相比對。
    - 結束碼：`0` 全部相符；`1` 有不符（列數、加總、part 檔遺失或位元組數不對、schema 拒收某列）；`2` 拒絕執行（沒有 `_ok.json`、`consistent` 不是 `true`、`--db` 檔已存在）。最後一行印出耗時。
+   - 演練還會檢查每一列的 `version` 是否為整數且不大於 `_ok.json` 的 `versionAtEnd`。**不檢查版本號是否唯一**：一個 mutation 寫的每一列都蓋同一個版本號（可能跨好幾張表，`(user_id, version)` 索引也不是唯一索引，見 `d1-store.ts`），pull 是依 (version, 表順序, 主鍵) 分頁，所以重複是正常的。
+   - 加 `--emit-sql <檔案>`（演練 OK 才會寫，且不覆蓋既有檔案）會另外產生還原到 D1 的 SQL，用在第五節的災難還原。
    - 需要 Node 22.18 以上（`node:sqlite` 不用旗標，且 `node` 能直接執行 `.ts`；本機以 Node 25 驗證過）。第一次執行可能印出 `ExperimentalWarning: SQLite is an experimental feature`，不影響結果。目前的 migrations（STRICT 表、`ANY` 型別、部分唯一索引、CHECK 裡的 `date()`／`strftime()`、`json_valid`）在 `node:sqlite` 內建的 SQLite 上都能直接套用，沒有需要繞過的語法；wrangler 自己的 `d1_migrations` 記錄表不會建，演練用不到。若之後某個 migration 在 `node:sqlite` 失敗，錯誤訊息會指出是哪一個檔案；在 `src/drill-lib.ts` 的 `applyMigrations` 處理，並把解法補在這裡。
 3. 把演練的耗時、版本號（`version a..b`）記在下面的「演練紀錄」：
 
@@ -201,7 +203,7 @@ Apps Script 編輯器 → 專案設定 → 指令碼屬性，新增或修改 `RE
 fetch-sheet                 # 此時 GAS 唯讀，抓到的就是最終資料
 transform
 emit-sql --reset            # 清空 D1 業務表，寫入全部資料，並寫入新的 epoch（所有裝置會重置並重新同步）
-wrangler d1 execute --remote --file <emit-sql 的輸出檔>
+WR d1 execute food-log --remote --file <emit-sql 的輸出檔>   # 套用（指令見下）
 verify                      # 必須全對
 ```
 
@@ -225,7 +227,7 @@ WR d1 execute food-log --remote --file <emit-sql 的輸出檔>
    ```bash
    node workers/api/scripts/bot-key.ts --email <OWNER_EMAIL> --origin https://<WORKER_HOST> --remote
    ```
-   把印出的 `wrangler d1 execute … --command '…'` 貼上執行，才算寫進 D1。
+   把印出的整行指令（同樣是 `WR d1 execute food-log --remote --command '…'`）貼上執行，才算寫進 D1。
 2. 切換 Kyujin 的設定：Base URL 改成 `https://<WORKER_HOST>/bot/v1`，key 從 `kyujin.env` 讀（`FOODLOG_API_BASE`、`FOODLOG_API_KEY`），請求格式與欄位名照 [`docs/kyujin-api-v2.md`](../kyujin-api-v2.md)。用一個讀取請求（`read`）確認通了。
 3. **輪替舊的共享密鑰**：把 GAS Script Property `SHARED_SECRET` 換成新的隨機值（舊的作廢）。這樣即使舊設定還留在某處，也無法再打舊 `/exec`。新值不用記，回滾時要用再換（見第四節）。
 4. 之後若要輪替 Kyujin 的 key：用 `--key-file` 發第二把、切過去，再 `node workers/api/scripts/bot-key.ts --revoke <key id> --remote`（`--list` 可查 key id）撤銷舊的；撤銷後下一個請求就是 401。
@@ -298,7 +300,7 @@ npx -y pnpm@10 --filter @food-log/app build
 - [ ] 每週做一次還原演練（第 1.5 節），耗時與結果記在演練紀錄
 - [ ] 每週異地備份（放哪裡是第 8 節的待決定事項）
 
-兩週內任何一天不通過，就停下來查；查不出或資料有疑慮就走第四節回滾。兩週全過才進入第五節。
+兩週內任何一天不通過，就停下來查；查不出或資料有疑慮就走第四節回滾。兩週全過才進入第六節。
 
 ---
 
@@ -313,26 +315,39 @@ npx -y pnpm@10 --filter @food-log/app build
 | # | 步驟（對應計畫第 6 節） | 指令／動作 | 目標（分） | 開始 | 結束 | 實際（分） |
 |---|---|---|---|---|---|---|
 | 0 | 決定回滾，記下時間 T0 | | 0 | | | |
-| A | 第 5 項：v2 停止收新資料 | `MIN_CLIENT_VERSION=9999` | 2 | | | |
+| A | 第 5 項：v2 停止收新資料（擋 `/sync` + 撤銷 Kyujin v2 key） | `WR deploy --var …`、`bot-key.ts --revoke` | 4 | | | |
 | B | 第 1 項：GAS `READ_ONLY=0` | 指令碼屬性 | 2 | | | |
-| C | 第 2 項：`reverse-export --since <V_cut> --dry-run`，確認 | 見下 | 6 | | | |
-| D | 第 2 項：`reverse-export --since <V_cut>` 正式執行 | 見下 | 6 | | | |
+| C | 第 2 項：`reverse-export --since <V_cut> --dry-run`，確認 | 見下 | 5 | | | |
+| D | 第 2 項：`reverse-export --since <V_cut>` 正式執行 | 見下 | 5 | | | |
 | E | 第 3 項：從 `v1-final` 重新部署 GitHub Pages | 見下 | 8 | | | |
 | F | 第 4 項：Kyujin 換回舊設定 | 見下 | 4 | | | |
 | G | 驗證：舊 App 記一筆、Sheet 有列、Kyujin 讀得到 | | 2 | | | |
 | | **合計** | | **30** | | | |
 
-順序說明：計畫第 6 節的順序是 1→2→3→4→5。上表把第 5 項（A）提前，是因為 `reverse-export` 要讀的是 v2 的最終資料：先讓所有 push 回 409，才不會在匯出之後又有新寫入而遺漏。如果當下不想先擋 v2（例如只是演練），照計畫原順序也可以，但 5 要在 2 之前至少「確認沒有新寫入」。實際順序以填表為準。
+順序說明：計畫第 6 節的順序是 1→2→3→4→5。上表把第 5 項（A）提前，是因為 `reverse-export` 要讀的是 v2 的最終資料：先讓所有 push 回 409、並撤銷 Kyujin 的 v2 key（`MIN_CLIENT_VERSION` 擋不到 Kyujin），才不會在匯出之後又有新寫入而遺漏。如果當下不想先擋 v2（例如只是演練），照計畫原順序也可以，但 5 要在 2 之前至少「確認沒有新寫入」。實際順序以填表為準。
 
 ### 步驟
 
-**A（第 5 項）v2 停止收新資料**：所有 push 都回 409 `client_too_old`，不再收新資料：
+**A（第 5 項）v2 停止收新資料：兩件事都要做**
 
-```bash
-WR deploy --var MIN_CLIENT_VERSION:9999
-```
+1. **擋住裝置的 push**：所有 `/sync` push 都回 409 `client_too_old`：
 
-（旗標以 `WR deploy --help` 為準；也可以改 `workers/api/wrangler.jsonc` 的 `MIN_CLIENT_VERSION` 後重新 `run deploy`，但比較慢。）回滾結束、要重新開放 v2 時，用正常的 `run deploy` 部署回 `"1"`。
+   ```bash
+   WR deploy --var MIN_CLIENT_VERSION:9999
+   ```
+
+   語法已用 `WR deploy --help` 核對（`--var` 是 `KEY:VALUE` 陣列，可重複；加 `--dry-run` 試過會被接受，沒有部署）。`wrangler deploy` 是**從目前這份工作目錄的程式碼**建置並上傳，所以：
+   - **必須在「正式環境現在跑的那個 commit」上執行。** 先 `git log -1 --format=%H`，對照你的部署紀錄（建議每次 `run deploy` 後把當時的 `git rev-parse HEAD` 記在切換日筆記裡；緊急部署時加 `--message "<短 SHA>"`，`WR deployments list` 才看得到）。不一致就先 `git checkout` 到正式環境的那個 commit 再部署；否則這次「只想改一個變數」的部署會把別的程式碼一起換上去。
+   - `--var` 只覆蓋這個變數；其他 vars 仍來自 `wrangler.jsonc`，secrets 不受影響。
+   - 回滾結束、要重新開放 v2 時，用正常的 `run deploy` 部署回 `"1"`（`wrangler.jsonc` 裡的值沒有被改）。
+2. **撤銷 Kyujin 的 v2 key**：`MIN_CLIENT_VERSION` 只擋 `/sync`（`workers/api/src/routes/sync.ts`），**不擋 `/bot/v1/mutate`**，所以 Kyujin 仍可以寫進 v2，而這些寫入會發生在 `reverse-export` 之後，永遠不會回到 Sheet。先列出 key，再逐把撤銷（兩個指令都只印出 `WR d1 execute food-log --remote --command '…'`，貼上執行才生效；`--remote` 是 `bot-key.ts` 的旗標）：
+
+   ```bash
+   node workers/api/scripts/bot-key.ts --list --remote
+   node workers/api/scripts/bot-key.ts --revoke <key id> --remote     # 列表裡每一把 key 都撤銷
+   ```
+
+   撤銷沒有快取，下一個請求就是 401（`docs/kyujin-api-v2.md`：Kyujin 收到 401 不重試，會通知 Brian）。**步驟 F 仍然成立**：F 是把 Kyujin 的設定改回舊 GAS（`<GAS_EXEC_URL>` + 共享密鑰），那是另一條路；撤銷 v2 key 只是在 F 完成前擋住它對 v2 的寫入，並保證 `reverse-export` 看到的是最終資料。之後若重新切到 v2，要再發新 key（切換步驟 4）。
 
 **B（第 1 項）GAS `READ_ONLY=0`**：Apps Script 編輯器 → 專案設定 → 指令碼屬性，把 `READ_ONLY` 改成 `0`（或刪除）。同時**把 `SHARED_SECRET` 換回舊 Kyujin 設定與舊 App 要用的值**（第二節步驟 4 輪替過它；舊值若已不可得，就產生新值，並在 F 步驟更新所有舊設定，舊 App 的共享密鑰要重新貼）。
 
@@ -363,7 +378,47 @@ npm ci && ./scripts/deploy-gh-pages.sh
 
 ---
 
-## 五、30 天後清理（⛔ Brian）
+## 五、災難還原（D1 遺失或損毀）⛔ Brian
+
+這一節是「v2 自己的資料壞了或不見了」，從 R2 的每日匯出把資料放回 D1。和第四節不同：第四節是退回 v1（舊 Sheet），這一節是留在 v2。**能還原到的最新狀態是「最後一份 `consistent: true` 的匯出」，那之後的寫入會遺失**（最壞約 24 小時）。裝置本機若有較新的資料，見第 6 步。
+
+匯出檔不含登入資料（`user`、`session`、`account`、`passkey`、`apikey`、`verification`、`login_codes` 都不匯出，見 `cron/export.ts`），產生的還原 SQL 也**永遠不會動這些表和 `export_progress`**；它清掉並重建的是：六張業務表（`stores`、`items`、`logs`、`weights`、`favorites`、`config`）、`sync_clients`、`mutation_outcomes`，並把 `meta.version` 設成「列版本號最大值與 `versionAtEnd` 較大者」、`meta.epoch` 設成**新的隨機值**（所有裝置下次 pull 都會得到 `reset:true`，從伺服器重建本機資料）。
+
+1. **擋住寫入**（還原期間不能有人寫）：照第四節步驟 A，`WR deploy --var MIN_CLIENT_VERSION:9999`（注意要在正式環境那個 commit 上執行），並撤銷 Kyujin 的 key。
+2. **找最近一份可用的匯出並下載**：從最新的日期往回找，第一份 `_ok.json` 存在且 `"consistent": true` 的就是了（做法見第 1.5 節；`restore-drill` 會拒絕 `consistent: false`）。下載到 `<DRILL_DIR>`（repo 外）。
+3. **D1 的狀況決定要不要 `--user-id`**：
+   - **(a) D1 還在、只有業務資料壞了**：登入資料沒事，owner 的 `user.id` 沒變，**不用 `--user-id`**。
+   - **(b) D1 整個重建**（`WR d1 create food-log`、把新的 `database_id` 填進 `workers/api/wrangler.jsonc`、`run deploy` 套用 migrations；secrets 若是新 Worker 要重新 `secret put`）：登入資料是空的，要重新建 owner，而新 owner 的 `user.id` 是新的隨機值，和匯出檔裡的 `user_id` 不同。依序：
+     ```bash
+     node workers/api/scripts/bootstrap-owner.ts --email <OWNER_EMAIL> --name <顯示名稱> --remote     # 貼上執行印出的指令
+     WR d1 execute food-log --remote --command "SELECT id FROM user"                                   # 記下新的 id，下面叫 <NEW_USER_ID>
+     ```
+     匯出檔只有單一使用者，所以下一步帶 `--user-id <NEW_USER_ID>`，所有列的 `user_id` 會改成新 id。
+4. **產生還原 SQL**（只讀本機資料夾，不碰 R2、D1；演練不是 OK 就不會產生檔案，已存在的檔案不會被覆蓋）：
+   ```bash
+   cd tools/ops
+   node src/restore-drill.ts --dir <DRILL_DIR> --emit-sql <DRILL_DIR>/restore.sql                          # (a)
+   node src/restore-drill.ts --dir <DRILL_DIR> --emit-sql <DRILL_DIR>/restore.sql --user-id <NEW_USER_ID>   # (b)
+   ```
+   輸出會列出每張表的列數、每日加總與耗時，最後印出 `SQL written: …`（含新的 epoch 與 version）。`restore.sql` 的第一組語句會確認目標資料庫裡真的有要寫入的 `user.id`：沒有就在刪除任何東西之前整批中止（所以 (b) 一定要先建 owner）。
+   - 可先在本機 D1 預演：`WR d1 migrations apply food-log --local`，再 `WR d1 execute food-log --local --file <DRILL_DIR>/restore.sql`（本機要先有同 id 的 `user` 列，否則守門會擋下；這是預期的）。
+5. **⛔ 套用到正式 D1**：
+   ```bash
+   WR d1 execute food-log --remote --file <DRILL_DIR>/restore.sql
+   ```
+   檔案以刪除開頭、沒有 BEGIN／COMMIT（D1 不接受），所以**中途失敗就原檔再套一次**。每條語句都不超過 D1 的語句大小上限（每個 INSERT 最多 100 列且約 50 KB 以內）。
+6. **驗證**：
+   ```bash
+   WR d1 execute food-log --remote --command "SELECT key, value FROM meta"
+   WR d1 execute food-log --remote --command "SELECT (SELECT COUNT(*) FROM stores) AS stores, (SELECT COUNT(*) FROM items) AS items, (SELECT COUNT(*) FROM logs) AS logs, (SELECT COUNT(*) FROM weights) AS weights, (SELECT COUNT(*) FROM favorites) AS favorites, (SELECT COUNT(*) FROM config) AS config"
+   ```
+   `meta.version` 應等於演練輸出的 version，`meta.epoch` 應等於 `SQL written` 那行的新 epoch，各表列數（含已刪除）應等於演練輸出的「expected」欄。
+7. **重新開放**：`run deploy` 部署回 `MIN_CLIENT_VERSION` `"1"`；用新發的 key 重新設定 Kyujin（`bot-key.ts`，見切換步驟 4）。用手機開 App，確認它重置後今天（匯出日之前）的資料都在。
+8. **裝置本機比匯出新的資料**：匯出日之後才記的資料如果還在某台裝置的本機（尚未同步或已同步但還原後遺失），重置時是否保留待送變更，以 sync client 的實作為準；還原前先到各裝置確認有沒有待送／失敗清單，必要時手動補記。Sheet（舊 v1）只到切換日，不是這份資料的來源。
+
+---
+
+## 六、30 天後清理（⛔ Brian）
 
 **條件**：切換滿 30 天、觀察兩週的檢查全過、近期每週的還原演練都 OK、確認不再需要回滾（`v1-final` tag 會保留，永遠可以從它重建 v1）。
 

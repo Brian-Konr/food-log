@@ -10,7 +10,9 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { TABLES as CORE_TABLES } from '@food-log/core'
 import { COLUMNS } from '../../../workers/api/src/db/tables.ts'
-import { DrillRefusal, TABLES, formatReport, parseCsv, runDrill } from '../src/drill-lib.ts'
+import { DatabaseSync } from 'node:sqlite'
+import { DEFAULT_MIGRATIONS_DIR, DrillRefusal, TABLES, applyMigrations, formatReport, listMigrations, parseCsv, runDrill } from '../src/drill-lib.ts'
+import { buildRestoreSql, sqlLiteral } from '../src/restore-sql.ts'
 import type { ExportManifest, PartInfo, Row, TableManifest } from '../src/drill-lib.ts'
 
 const U = 'user-fake-1'
@@ -245,5 +247,178 @@ describe('restore-drill', () => {
     expect(refused.status).toBe(2)
     expect(refused.stderr).toContain('refused')
     expect(run(join(root, 'nope')).status).toBe(2)
+  })
+})
+
+// ------------------------------------------------------------------ --emit-sql (disaster recovery)
+
+const USER_INSERT = (id: string) => `INSERT INTO user (id, name, email, email_verified, created_at, updated_at) VALUES ('${id}', 'Fake Owner', 'owner@example.invalid', 1, 1, 1)`
+
+/** a fresh migrated "production" database that already holds auth data and some stale business data */
+function prodDb(userId: string): DatabaseSync {
+  const db = new DatabaseSync(':memory:')
+  applyMigrations(db, listMigrations(DEFAULT_MIGRATIONS_DIR))
+  db.exec(USER_INSERT(userId))
+  db.exec(`INSERT INTO login_codes (code_hash, user_id, expires_at, created_at) VALUES ('fakehash', '${userId}', 9, 1)`)
+  db.exec(`INSERT INTO export_progress (id, day, attempt, version_at_start, epoch_at_start, table_idx, rowid_cursor, part, rows, state, lease_token, lease_until, started_at, updated_at) VALUES (1, '2026-03-02', 1, 3, 'e1', 0, 0, 1, 0, '{}', '', 0, 'x', 'x')`)
+  db.exec(`INSERT INTO sync_clients (user_id, client_id, last_mutation_id, last_seen_at) VALUES ('${userId}', 'c1', 7, 'x')`)
+  db.exec(`INSERT INTO mutation_outcomes (user_id, client_id, mutation_id, ok, name, result, at) VALUES ('${userId}', 'c1', 7, 1, 'logs.add', '{}', 'x')`)
+  db.exec(`INSERT INTO logs (id, user_id, day, ts, name, src, qty, kcal, protein, fat, carb, source, version, updated_at) VALUES ('stale', '${userId}', '2026-01-01', '2026-01-01T08:00:00+08:00', 'stale', '其他', 1, 1, 1, 1, 1, 'quick', 2, 'x')`)
+  db.exec(`UPDATE meta SET value = 3 WHERE key = 'version'`)
+  return db
+}
+
+const n = (db: DatabaseSync, sql: string): number => Number((db.prepare(sql).get() as { c: number }).c)
+
+describe('restore-drill --emit-sql', () => {
+  it('emits SQL that restores a fresh migrated DB: counts match, new epoch, version = head, auth data untouched', () => {
+    writeExport(dir)
+    const sqlPath = join(root, 'restore.sql')
+    const r = runDrill({ dir, emitSqlPath: sqlPath })
+    expect(r.ok).toBe(true)
+    expect(r.emittedSql?.path).toBe(sqlPath)
+    const sql = readFileSync(sqlPath, 'utf8')
+    expect(sql).not.toMatch(/\b(DELETE FROM|UPDATE|INSERT INTO) (user|session|account|verification|passkey|apikey|login_codes|export_progress)\b/)
+
+    const db = prodDb(U)
+    db.exec(sql)
+    const manifest = JSON.parse(readFileSync(join(dir, '_ok.json'), 'utf8')) as ExportManifest
+    for (const t of TABLES) expect(n(db, `SELECT COUNT(*) AS c FROM ${t}`), t).toBe(manifest.tables[t]!.rows)
+    expect(n(db, `SELECT COUNT(*) AS c FROM logs WHERE id = 'stale'`)).toBe(0)
+    expect(n(db, 'SELECT COUNT(*) AS c FROM sync_clients')).toBe(0)
+    expect(n(db, 'SELECT COUNT(*) AS c FROM mutation_outcomes')).toBe(0)
+    // auth + export bookkeeping untouched
+    expect(n(db, `SELECT COUNT(*) AS c FROM user WHERE id = '${U}'`)).toBe(1)
+    expect(n(db, 'SELECT COUNT(*) AS c FROM login_codes')).toBe(1)
+    expect(n(db, 'SELECT COUNT(*) AS c FROM export_progress')).toBe(1)
+    // meta: head version, brand-new epoch (clients get reset:true)
+    const meta = Object.fromEntries((db.prepare(`SELECT key, value FROM meta`).all() as { key: string; value: unknown }[]).map((m) => [m.key, m.value]))
+    expect(meta.version).toBe(14)
+    expect(meta.epoch).not.toBe('e1')
+    expect(meta.epoch).toBe(r.emittedSql!.epoch)
+    expect(String(meta.epoch)).toMatch(/^e[0-9a-f]{12}$/)
+    // values survive: per-day sums and the config JSON text
+    expect(n(db, `SELECT SUM(kcal) AS c FROM logs WHERE day = '2026-03-01' AND deleted_at IS NULL`)).toBe(950.5)
+    expect((db.prepare(`SELECT remind_meal_times AS v FROM config`).get() as { v: string }).v).toBe('["08:00","12:30"]')
+    db.close()
+  })
+
+  it('uses versionAtEnd when it is larger than every row version', () => {
+    writeExport(dir)
+    patchManifest(dir, (m) => {
+      m.versionAtEnd = 20
+    })
+    const sqlPath = join(root, 'restore.sql')
+    expect(runDrill({ dir, emitSqlPath: sqlPath }).ok).toBe(true)
+    const db = prodDb(U)
+    db.exec(readFileSync(sqlPath, 'utf8'))
+    expect(n(db, `SELECT value AS c FROM meta WHERE key = 'version'`)).toBe(20)
+    db.close()
+  })
+
+  it('writes nothing when the drill is not OK, and never overwrites an existing file', () => {
+    writeExport(dir)
+    patchManifest(dir, (m) => {
+      m.tables.stores!.rows = 2
+    })
+    const sqlPath = join(root, 'restore.sql')
+    const r = runDrill({ dir, emitSqlPath: sqlPath })
+    expect(r.ok).toBe(false)
+    expect(r.emittedSql).toBeUndefined()
+    expect(existsSync(sqlPath)).toBe(false)
+
+    writeFileSync(sqlPath, '-- precious')
+    expect(() => runDrill({ dir, emitSqlPath: sqlPath })).toThrow(/already exists/)
+    expect(readFileSync(sqlPath, 'utf8')).toBe('-- precious')
+  })
+
+  it('--user-id rewrites user_id for a fresh D1 with a new owner, and the guard aborts before any delete when that owner is missing', () => {
+    writeExport(dir)
+    const sqlPath = join(root, 'restore.sql')
+    expect(() => runDrill({ dir, emitUserId: 'x' })).toThrow(/--emit-sql/)
+    expect(runDrill({ dir, emitSqlPath: sqlPath, emitUserId: 'new-owner-id' }).ok).toBe(true)
+    const sql = readFileSync(sqlPath, 'utf8')
+
+    const db = prodDb('new-owner-id')
+    db.exec(sql)
+    expect(n(db, `SELECT COUNT(*) AS c FROM logs WHERE user_id = 'new-owner-id'`)).toBe(5)
+    expect(n(db, `SELECT COUNT(*) AS c FROM logs WHERE user_id = '${U}'`)).toBe(0)
+    db.close()
+
+    // owner row missing: the CHECK in cas_guard fails on the first statement; nothing was deleted
+    const wrong = prodDb('someone-else')
+    expect(() => wrong.exec(sql)).toThrow()
+    expect(n(wrong, `SELECT COUNT(*) AS c FROM logs WHERE id = 'stale'`)).toBe(1)
+    expect(n(wrong, 'SELECT COUNT(*) AS c FROM sync_clients')).toBe(1)
+    wrong.close()
+  })
+
+  it('escapes quotes, semicolons, newlines and unicode in values', () => {
+    const rows = fixtureRows()
+    const nasty = "O'Brien; DROP TABLE logs;--\n\"x\" 🍙 \\"
+    rows.logs[0] = { ...rows.logs[0]!, name: nasty }
+    writeExport(dir, rows)
+    const sqlPath = join(root, 'restore.sql')
+    expect(runDrill({ dir, emitSqlPath: sqlPath }).ok).toBe(true)
+    const db = prodDb(U)
+    db.exec(readFileSync(sqlPath, 'utf8'))
+    expect((db.prepare(`SELECT name FROM logs WHERE id = 'l1'`).get() as { name: string }).name).toBe(nasty)
+    expect(n(db, 'SELECT COUNT(*) AS c FROM logs')).toBe(5)
+    db.close()
+    expect(sqlLiteral("a'b")).toBe("'a''b'")
+    expect(sqlLiteral(null)).toBe('NULL')
+    expect(sqlLiteral(1.5)).toBe('1.5')
+    expect(() => sqlLiteral('a\u0000b')).toThrow(/NUL/)
+    expect(() => sqlLiteral(Number.NaN)).toThrow(/non-finite/)
+  })
+
+  it('splits big tables into multi-row INSERTs of at most 100 rows', () => {
+    const favorites: Row[] = Array.from({ length: 250 }, (_, i) => shaped('favorites', { user_id: U, item_id: `u:f${i}`, version: i + 1, deleted_at: null, updated_at: STAMP }))
+    const out = buildRestoreSql({ rowsByTable: { favorites }, versionAtEnd: 250, epoch: 'eabc', exportDay: DAY })
+    expect(out.sql.match(/INSERT INTO favorites/g)).toHaveLength(3)
+    const db = prodDb(U)
+    db.exec(out.sql)
+    expect(n(db, 'SELECT COUNT(*) AS c FROM favorites')).toBe(250)
+    db.close()
+  })
+
+  it('CLI: --emit-sql writes the file and prints it; a second run refuses', () => {
+    const cli = join(import.meta.dirname, '..', 'src', 'restore-drill.ts')
+    writeExport(dir)
+    const sqlPath = join(root, 'cli.sql')
+    const first = spawnSync(process.execPath, [cli, '--dir', dir, '--emit-sql', sqlPath], { encoding: 'utf8' })
+    expect(first.status).toBe(0)
+    expect(first.stdout).toContain('SQL written:')
+    expect(existsSync(sqlPath)).toBe(true)
+    expect(spawnSync(process.execPath, [cli, '--dir', dir, '--emit-sql', sqlPath], { encoding: 'utf8' }).status).toBe(2)
+  })
+})
+
+describe('restore-drill checks', () => {
+  it('rejects rows whose version is above versionAtEnd (not unique-checked: one mutation stamps several rows)', () => {
+    writeExport(dir)
+    patchManifest(dir, (m) => {
+      m.versionAtEnd = 10
+    })
+    const r = runDrill({ dir })
+    expect(r.ok).toBe(false)
+    expect(r.problems.join('\n')).toMatch(/weights: \d+ row\(s\) have a version above versionAtEnd=10/)
+  })
+
+  it('accepts several rows (even in several tables) sharing one version', () => {
+    const rows = fixtureRows()
+    rows.logs[1] = { ...rows.logs[1]!, version: rows.logs[0]!.version }
+    rows.items[0] = { ...rows.items[0]!, version: rows.logs[0]!.version }
+    writeExport(dir, rows)
+    expect(runDrill({ dir }).problems).toEqual([])
+  })
+
+  it('reports unknown columns once per table, with the number of affected rows', () => {
+    const rows = fixtureRows()
+    rows.logs = rows.logs.map((r) => ({ ...r, bogus: 1, other: 2 }))
+    writeExport(dir, rows)
+    const r = runDrill({ dir })
+    const unknown = r.problems.filter((p) => p.includes('unknown column'))
+    expect(unknown).toEqual(['logs: 5 row(s) have unknown column(s): bogus, other'])
   })
 })

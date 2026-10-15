@@ -7,9 +7,10 @@
 //   <dir>/logs.part-N.csv          same logs rows; only part 1 has the BOM and the header line
 // A part's `key` is the R2 object key (`exports/YYYY-MM-DD/<file>`); only its last path segment is used here, so the
 // folder can be wherever Brian downloaded it to.
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { buildRestoreSql, newEpoch } from './restore-sql.ts'
 
 export type PartInfo = { key: string; rows: number; bytes: number }
 export type TableManifest = { rows: number; bytes: number; parts: PartInfo[] }
@@ -56,6 +57,8 @@ export type DrillReport = {
   /** every mismatch / load error; empty when ok */
   problems: string[]
   elapsedMs: number
+  /** set when --emit-sql wrote a file */
+  emittedSql?: { path: string; epoch: string; version: number; users: number; statements: number }
 }
 
 /**
@@ -233,13 +236,16 @@ export function loadRows(db: DatabaseSync, table: string, rows: Row[], problems:
   const known = columnsOf(db, table)
   let inserted = 0
   const stmts = new Map<string, ReturnType<DatabaseSync['prepare']>>()
+  const unknownCols = new Set<string>()
+  let unknownRows = 0
   db.exec('BEGIN')
   try {
     for (const [i, row] of rows.entries()) {
       const keys = Object.keys(row)
       const unknown = keys.filter((k) => !known.has(k))
       if (unknown.length > 0) {
-        problems.push(`${table}: row ${i + 1} has unknown column(s): ${unknown.join(', ')}`)
+        for (const k of unknown) unknownCols.add(k)
+        unknownRows++
         continue
       }
       const sig = keys.join(',')
@@ -266,6 +272,8 @@ export function loadRows(db: DatabaseSync, table: string, rows: Row[], problems:
     db.exec('ROLLBACK')
     throw e
   }
+  // one problem per table, not one per row
+  if (unknownRows > 0) problems.push(`${table}: ${unknownRows} row(s) have unknown column(s): ${[...unknownCols].join(', ')}`)
   return inserted
 }
 
@@ -322,6 +330,37 @@ export type DrillOptions = {
   dbPath?: string
   migrationsDir?: string
   now?: () => number
+  /**
+   * Write a SQL file that restores the export into D1 (see restore-sql.ts). Only written when the drill result is OK;
+   * refused up front when the file already exists.
+   */
+  emitSqlPath?: string
+  /** with emitSqlPath: rewrite every row's user_id to this id (disaster recovery into a fresh D1 whose owner row got a new id) */
+  emitUserId?: string
+  /** with emitSqlPath: the new epoch (default: random) */
+  emitEpoch?: string
+}
+
+/**
+ * Version invariant: every row's `version` is a non-negative integer <= versionAtEnd (the head version when the export
+ * finished). It is deliberately NOT checked for uniqueness: one mutation stamps every row it writes (several rows, even in
+ * several tables) with the same version (d1-store.ts rowsAtVersion; the (user_id, version) indexes are not unique), and pull
+ * pages by (version, table order, primary key), so a repeated version is normal.
+ */
+function checkVersions(table: string, rows: Row[], versionAtEnd: number, problems: string[]): void {
+  let bad = 0
+  let above = 0
+  let maxSeen = 0
+  for (const r of rows) {
+    const v = r.version
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) bad++
+    else {
+      if (v > versionAtEnd) above++
+      if (v > maxSeen) maxSeen = v
+    }
+  }
+  if (bad > 0) problems.push(`${table}: ${bad} row(s) with a missing or non-integer version`)
+  if (above > 0) problems.push(`${table}: ${above} row(s) have a version above versionAtEnd=${versionAtEnd} (highest ${maxSeen}); the export is not a consistent snapshot`)
 }
 
 const countRows = (db: DatabaseSync, sql: string): number => Number((db.prepare(sql).get() as { c: number }).c)
@@ -340,18 +379,24 @@ export function runDrill(opts: DrillOptions): DrillReport {
     throw new DrillRefusal(`refused: ${opts.dbPath} already exists (the drill needs a fresh database; delete it or pick another --db)`)
   }
 
+  if (opts.emitSqlPath && existsSync(opts.emitSqlPath)) throw new DrillRefusal(`refused: ${opts.emitSqlPath} already exists (delete it or pick another --emit-sql file)`)
+  if (opts.emitUserId && !opts.emitSqlPath) throw new DrillRefusal('refused: --user-id only makes sense together with --emit-sql')
+
   const db = new DatabaseSync(opts.dbPath ?? ':memory:')
   try {
     applyMigrations(db, migrations)
     const problems: string[] = []
     const tables: TableReport[] = []
     let logRows: Row[] = []
+    const rowsByTable: Record<string, Row[]> = {}
 
     for (const t of TABLES) {
       const tm = manifest.tables[t]
       if (!tm) problems.push(`${t}: no entry in _ok.json`)
       const rows = tm ? readTableRows(opts.dir, t, tm, problems) : []
       if (t === 'logs') logRows = rows
+      rowsByTable[t] = rows
+      checkVersions(t, rows, manifest.versionAtEnd, problems)
       if (tm && rows.length !== tm.rows) problems.push(`${t}: part files hold ${rows.length} rows, manifest says ${tm.rows}`)
       loadRows(db, t, rows, problems)
       const live = countRows(db, `SELECT COUNT(*) AS c FROM ${t} WHERE deleted_at IS NULL`)
@@ -376,6 +421,13 @@ export function runDrill(opts: DrillOptions): DrillReport {
     for (const w of weights) if (w.count > 1) problems.push(`weights ${w.day}: ${w.count} live weights on one day`)
 
     const days: DayReport[] = [...dbSums.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([day, n]) => ({ day, ...n }))
+    let emittedSql: DrillReport['emittedSql']
+    if (opts.emitSqlPath && problems.length === 0) {
+      const epoch = opts.emitEpoch ?? newEpoch()
+      const out = buildRestoreSql({ rowsByTable, versionAtEnd: manifest.versionAtEnd, epoch, exportDay: manifest.day, userId: opts.emitUserId })
+      writeFileSync(opts.emitSqlPath, out.sql, { flag: 'wx' })
+      emittedSql = { path: opts.emitSqlPath, epoch, version: out.version, users: out.users, statements: out.statements }
+    }
     return {
       ok: problems.length === 0,
       exportDay: manifest.day,
@@ -386,6 +438,7 @@ export function runDrill(opts: DrillOptions): DrillReport {
       weights,
       problems,
       elapsedMs: now() - t0,
+      ...(emittedSql ? { emittedSql } : {}),
     }
   } finally {
     db.close()
@@ -411,6 +464,10 @@ export function formatReport(r: DrillReport): string {
   else {
     out.push(`RESULT: MISMATCH (${r.problems.length})`)
     for (const p of r.problems) out.push(`  - ${p}`)
+  }
+  if (r.emittedSql) {
+    const e = r.emittedSql
+    out.push(``, `SQL written: ${e.path} (${e.statements} statements, ${e.users} user(s), version ${e.version}, new epoch ${e.epoch})`)
   }
   out.push(`elapsed: ${(r.elapsedMs / 1000).toFixed(2)} s`)
   return out.join('\n')
