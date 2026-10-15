@@ -661,14 +661,14 @@ function softDelete_(table, id, kyujin) {
   if (table !== 'Logs' && table !== 'Weights' && table !== 'Items' && table !== 'Stores') return fail_('bad_table', table);
   if (table === 'Stores' && kyujin) return fail_('forbidden', KYU_MSG);
   if ((table === 'Weights' || table === 'Items') && kyujin) return fail_('forbidden', KYU_MSG);
-  var existing = table === 'Stores' && kyujin ? null : findById_(table, id);
+  var existing = findById_(table, id);
   if (table === 'Logs' && kyujin) {
     if (!existing || logSourceOf_(existing.source) !== 'kyujin') return fail_('forbidden', KYU_MSG);
   } else if (kyujin) {
     return fail_('forbidden', KYU_MSG);
   }
-  if (!existing) existing = findById_(table, id);
-  if (!existing) return fail_('not_found', '找不到這筆紀錄：' + id);
+  // App，或已通過檢查的 Kyujin Logs：不存在、已刪除都當成功，不寫儲存格。
+  if (!existing || isDeleted_(existing)) return { ok: true };
   var sh = sheet_(table);
   var cols = header_(sh);
   var now = nowIso_();

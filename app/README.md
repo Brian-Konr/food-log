@@ -103,6 +103,8 @@ v1.1.1 沒有新欄位，不要為了它跑 migrate；要更新 Apps Script 只�
 
 v1.1.3 沒有新欄位，但寫入改成純文字格式，**要重新部署 Apps Script**。部後端之後打兩次 health（`GET /exec` 不帶密鑰）：第一次的 `migration.textFixes` 是這次改寫的 day／src 格數，第二次必須是 0。不要跑 `rotateSharedSecret`，也不必在編輯器手動執行 `migrateFoodLog`（後端第一次請求會自動跑）。只部署前端不會停止試算表把 `7-11` 和日期轉成 Date。
 
+v1.1.4 沒有新欄位，不要跑 migrate，不要跑 `rotateSharedSecret`。`softDelete` 改成冪等：App 刪一個不存在或已經刪除的 id 回 `{ ok: true }`，不改儲存格。Kyujin 的 forbidden 不變（刪不到的 Logs、店家、品項、體重仍是 forbidden）。**要重新部署 Apps Script**，否則舊 `/exec` 仍對找不到的 id 回 `not_found`。前端會把 softDelete 的 `not_found` 當成成功，並在打開時清掉舊的失敗刪除，所以只部署前端也能止住「每次打開都 toast」；仍請先部後端、再部前端。部署後不必看 health 的 `textFixes`，也不必手動跑 `migrateFoodLog`。
+
 授權範圍維持 `spreadsheets.currentonly`。不要加 Drive。
 
 如果改用「新增部署作業」，會得到新的網址，要更新 `deploy/gas-url` 並重新部署前端。
