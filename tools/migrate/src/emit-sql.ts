@@ -7,6 +7,9 @@
 // * At most 500 rows share one version (Workers free plan: the CPU of one pull page is limited, plan 0.2). Each chunk of one
 //   table starts with `UPDATE meta SET value = value + 1 WHERE key = 'version'` and its rows are stamped with that new version.
 // * --reset first deletes the owner's rows of the six business tables and writes a NEW meta.epoch, so every client resets.
+// * WITHOUT --reset an import is only safe as the FIRST import into an EMPTY D1. If the v2 app already wrote rows (a weight on the same
+//   day, a store with the same name) the upserts can hit the partial unique indexes and fail midway. For any later import use --reset.
+//   If a file fails, do NOT patch around it: re-run the whole import (emit-sql ... --reset) and apply all files again from the first.
 // * Output is split into files of at most --max-bytes (default 900 KB), always between chunks, in order: apply them in order.
 // * No transaction statements (D1 rejects BEGIN/COMMIT); one statement per line; control characters in strings are written with char().
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -191,7 +194,14 @@ function main(): void {
   console.log('anomalies:')
   for (const [k, n] of Object.entries(anomalySummary(result.anomalies)).sort()) console.log(`  ${n}\t${k}`)
   console.log(`wrote ${files.length} file(s) and anomalies.json to ${dir}`)
-  console.log(flags.has('reset') ? '# --reset: owner rows are deleted first and a new epoch is written' : '# no --reset: rows are upserted over what is there')
+  if (!flags.has('reset')) {
+    console.error('')
+    console.error('!!! WARNING: --reset is absent. Only for the first import into an empty D1; for any later import use --reset.')
+    console.error('!!! Without it, rows the v2 app already wrote (same-day weight, same-name store) can make a file fail midway on a unique index.')
+    console.error('!!! If a file fails: re-run the whole import with --reset and apply every file again from the first.')
+    console.error('')
+  }
+  console.log(flags.has('reset') ? '# --reset: owner rows are deleted first and a new epoch is written' : '# no --reset: rows are upserted over what is there (first import into an empty D1 only)')
   console.log(`# apply in this order (${flags.has('local') ? 'local D1' : '⛔ REMOTE D1: Brian only'}):`)
   for (const c of wranglerCommands(paths, { db: opts.db ?? 'food-log', local: flags.has('local') })) console.log(c)
 }

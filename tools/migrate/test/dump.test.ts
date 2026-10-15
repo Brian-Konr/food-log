@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { dumpCommand, dumpQueries, fromSql, parseDumpText, splitStatements } from '../src/dump.ts'
 import { emitSql } from '../src/emit-sql.ts'
 import { transform } from '../src/transform.ts'
@@ -76,6 +76,15 @@ INSERT INTO "sync_clients" VALUES('u1','dev',3,'x');
   })
   test('auto-detected by parseDumpText; tables that are not business tables are ignored', () => {
     expect(parseDumpText(sql).tables.weights).toHaveLength(4)
+  })
+  test('SQL input warns on stderr that it is experimental; JSON input does not', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    parseDumpText(sql)
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining('SQL dump input is experimental; prefer the JSON dump from d1-dump-command'))
+    spy.mockClear()
+    parseDumpText('{"meta":{"version":1,"epoch":"e"},"tables":{}}')
+    expect(spy).not.toHaveBeenCalled()
+    spy.mockRestore()
   })
   test('an INSERT without columns and without a CREATE TABLE is an error', () => {
     expect(() => fromSql(`INSERT INTO "logs" VALUES('a',1);`)).toThrow(/no column list/)

@@ -188,6 +188,7 @@ export function fromSql(sql: string): D1Dump {
 export function parseDumpText(text: string): D1Dump {
   const t = text.trimStart()
   if (t.startsWith('{') || t.startsWith('[')) return fromJson(JSON.parse(t))
+  console.error('warning: SQL dump input is experimental; prefer the JSON dump from d1-dump-command')
   return fromSql(text)
 }
 
@@ -197,6 +198,13 @@ export function readDump(file: string): D1Dump {
 
 if (isMain(import.meta.url)) {
   const { flags, opts } = parseArgs(process.argv.slice(2))
+  if (flags.has('help') || flags.has('h')) {
+    console.log(`usage: d1-dump-command [--db food-log] [--local]
+Prints the command that dumps D1 as JSON (read-only SELECTs); run it, then pass the file to verify / reverse-export as --dump.
+SQL dump input (wrangler d1 export) is EXPERIMENTAL: it is only tested on hand-written dumps and prints a warning when used.
+Prefer the JSON dump from this command.`)
+    process.exit(0)
+  }
   console.log(`# ${flags.has('local') ? 'local D1' : '⛔ REMOTE D1: Brian only'} (read-only SELECTs)`)
   console.log(dumpCommand({ db: opts.db ?? 'food-log', local: flags.has('local') }))
   console.log('# or: wrangler d1 export <db> --remote --output tools/migrate/out/d1-dump.sql   (parsed best-effort; the JSON above is the verified path)')
