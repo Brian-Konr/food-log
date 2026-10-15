@@ -18,11 +18,13 @@
 //             else committed first and a retry may well succeed -> false.
 //
 // Every statement is scoped by the bound userId; `meta` is the only global table.
-import { MUTATION_OUTCOME_RETENTION, MutationError, TABLES, taipeiIso } from '@food-log/core'
+import { MUTATION_OUTCOME_RETENTION, MutationError, TABLES, needsReset, taipeiIso } from '@food-log/core'
 import type {
   CommitInput,
   ErrorInput,
   MutationOutcome,
+  PullSnapshot,
+  PullSnapshotInput,
   RecordedError,
   Row,
   ServerStore,
@@ -253,24 +255,28 @@ export class D1UserStore implements UserStore {
     return headOf(rs.results)
   }
 
-  async rowsAfter(afterVersion: number, limit: number): Promise<VersionedRow[]> {
-    const db = this.db
-    // Phase 1: for every table, the version of its limit-th row after `afterVersion` (index-only, one batch). The smallest of
-    // those is a cutoff that already covers at least `limit` rows, so phase 2 reads each table only up to it instead of
-    // `limit` rows per table. (D1 allows at most 5 terms in a compound SELECT, so this cannot be one UNION ALL over 6 tables.)
-    const edges = await db.batch(
-      TABLES.map((t) =>
-        db
-          .prepare(`SELECT version FROM ${t} WHERE user_id = ? AND version > ? ORDER BY version LIMIT 1 OFFSET ?`)
-          .bind(this.userId, afterVersion, Math.max(0, limit - 1)),
-      ),
+  /** Phase 1 of a page read, one statement per table: the version of its limit-th row after `afterVersion` (index-only). */
+  private edgeStatements(afterVersion: number, limit: number): D1PreparedStatement[] {
+    return TABLES.map((t) =>
+      this.db
+        .prepare(`SELECT version FROM ${t} WHERE user_id = ? AND version > ? ORDER BY version LIMIT 1 OFFSET ?`)
+        .bind(this.userId, afterVersion, Math.max(0, limit - 1)),
     )
+  }
+
+  /** The smallest of the edges is a cutoff that already covers at least `limit` rows (MAX when no table has that many). */
+  private cutoffOf(edges: D1Result<{ version: number }>[]): number {
     let upTo = Number.MAX_SAFE_INTEGER
-    for (const e of edges as D1Result<{ version: number }>[]) {
+    for (const e of edges) {
       const v = e.results[0]?.version
       if (v !== undefined && v < upTo) upTo = v
     }
-    // Phase 2: those rows, all tables in one batch.
+    return upTo
+  }
+
+  /** Phase 2: the rows in (afterVersion, upTo], all tables in one batch, merged and cut to `limit`. */
+  private async rowsUpTo(afterVersion: number, upTo: number, limit: number): Promise<VersionedRow[]> {
+    const db = this.db
     const rs = await db.batch(
       TABLES.map((t) =>
         db
@@ -279,6 +285,48 @@ export class D1UserStore implements UserStore {
       ),
     )
     return mergeRows(rs as D1Result<Record<string, unknown>>[]).slice(0, limit)
+  }
+
+  async rowsAfter(afterVersion: number, limit: number): Promise<VersionedRow[]> {
+    // Phase 1: for every table, the version of its limit-th row after `afterVersion` (index-only, one batch). The smallest of
+    // those is a cutoff that already covers at least `limit` rows, so phase 2 reads each table only up to it instead of
+    // `limit` rows per table. (D1 allows at most 5 terms in a compound SELECT, so this cannot be one UNION ALL over 6 tables.)
+    const edges = await this.db.batch(this.edgeStatements(afterVersion, limit))
+    return this.rowsUpTo(afterVersion, this.cutoffOf(edges as D1Result<{ version: number }>[]), limit)
+  }
+
+  /**
+   * Everything pull needs in at most TWO D1 round trips (it used to be five sequential ones; measured wall time 420-940 ms):
+   *   batch 1 = [cursor, recorded errors, meta, the six page-edge probes]. One db.batch is ONE atomic snapshot of D1 (SQLite in a
+   *           single-threaded Durable Object runs a batch as one transaction, no commit can land in between), so cursor, errors and meta
+   *           are mutually consistent. That is stronger than the sequential reads, and it keeps the cursor-first guarantee: a mutation
+   *           m the cursor claims has its rows committed in the same batch as the cursor, hence visible to batch 2, which runs later.
+   *   batch 2 = the rows. Skipped when there is nothing newer than the cookie (meta.version <= cookie.version: the idle poll,
+   *           by far the most common call, is a single round trip) and when the cookie needs a reset (core then reads from 0).
+   * Rows are read after meta, exactly like the sequential path: versions only grow in commit order, so every row with
+   * version <= meta.version is already committed; core takes max(meta.version, last row version) for the next cookie.
+   */
+  async pullSnapshot(input: PullSnapshotInput): Promise<PullSnapshot> {
+    const { clientId, afterMutationId, epoch, afterVersion, limit } = input
+    const db = this.db
+    const [curRs, errRs, metaRs, ...edges] = await db.batch([
+      db.prepare(CURSOR_SQL).bind(this.userId, clientId),
+      db
+        .prepare(
+          `SELECT mutation_id, ok, name, result, error, message, details, at FROM mutation_outcomes WHERE user_id = ? AND client_id = ? AND ok = 0 AND mutation_id > ? ORDER BY mutation_id`,
+        )
+        .bind(this.userId, clientId, afterMutationId),
+      db.prepare(META_SQL),
+      ...this.edgeStatements(afterVersion, limit),
+    ])
+    const meta = headOf((metaRs as D1Result<MetaRow>).results)
+    const lastMutationId = ((curRs as D1Result<{ c: number }>).results[0]?.c as number | undefined) ?? 0
+    const errors = (errRs as D1Result<OutcomeRow>).results.map((r) => toRecordedError(clientId, r))
+    let rows: VersionedRow[] | null
+    if (needsReset(epoch, afterVersion, meta)) rows = null
+    else if (meta.version <= afterVersion) rows = []
+    else rows = await this.rowsUpTo(afterVersion, this.cutoffOf(edges as D1Result<{ version: number }>[]), limit)
+    return { lastMutationId, errors, meta, rows }
   }
 
   async rowsAtVersion(version: number): Promise<VersionedRow[]> {

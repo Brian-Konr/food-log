@@ -397,7 +397,7 @@ describe('property：多裝置同步收斂', () => {
     const seed = process.env.FC_SEED ? Number(process.env.FC_SEED) : Math.floor(Math.random() * 2 ** 31)
     try {
       await fc.assert(
-        fc.asyncProperty(fc.commands(commandArbs, { maxCommands: MAX_COMMANDS, size: 'max' }), fc.constantFrom(2, 3, 2000), async (cmds, pageRows) => {
+        fc.asyncProperty(fc.commands(commandArbs, { maxCommands: MAX_COMMANDS, size: 'max' }), fc.constantFrom(2, 3, 1000), async (cmds, pageRows) => {
           const { model, real } = await setup(pageRows)
           stats.commands += [...cmds].length
           try {

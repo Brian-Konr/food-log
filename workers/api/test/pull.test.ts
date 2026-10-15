@@ -39,7 +39,7 @@ describe('pull paging', () => {
     expect(count(p)).toBe(0)
   })
 
-  it('4500 rows page as 2000 / 2000 / 500 with a monotonically increasing cookie, each row exactly once', async () => {
+  it('4500 rows page as 1000 x 4 / 500 with a monotonically increasing cookie, each row exactly once', async () => {
     await seedLogs(4500)
     const seen = new Set<string>()
     let cookieQ = ''
@@ -54,7 +54,7 @@ describe('pull paging', () => {
       cookieQ = p.cookie
       if (!p.more) break
     }
-    expect(sizes).toEqual([2000, 2000, 500])
+    expect(sizes).toEqual([1000, 1000, 1000, 1000, 500])
     expect(seen.size).toBe(4500)
     expect(cookieQ).toBe('e1:4500')
     // up to date: nothing more
@@ -81,11 +81,11 @@ describe('pull paging', () => {
   })
 
   it('a single version bigger than a page is delivered whole (never cut in the middle)', async () => {
-    await seedLogs(2600, { sameVersion: true, firstVersion: 5 })
+    await seedLogs(1600, { sameVersion: true, firstVersion: 5 })
     await env.DB.prepare(`INSERT INTO weights (id, user_id, day, ts, kg, version, updated_at) VALUES ('later', ?, '2026-10-10', ?, 70, 6, 'x')`).bind(userId, noon('2026-10-10')).run()
     await env.DB.prepare(`UPDATE meta SET value = 6 WHERE key = 'version'`).run()
     const p1 = await get('clientId=c')
-    expect(p1.changes.logs).toHaveLength(2600)
+    expect(p1.changes.logs).toHaveLength(1600)
     expect(p1.more).toBe(true)
     expect(p1.cookie).toBe('e1:5')
     const p2 = await get('clientId=c&cookie=' + p1.cookie)
@@ -184,5 +184,98 @@ describe('cursor-first read order (a response never claims a mutation whose rows
     expect(next.lastMutationId).toBe(2)
     const all = new Set([...ids, ...next.changes.weights.map((w) => w.id)])
     expect([...all].sort()).toEqual(['w1', 'w2'])
+  })
+})
+
+describe('batched pull reads (UserStore.pullSnapshot on D1)', () => {
+  /** Count D1 round trips (db.batch calls and single-statement reads) and optionally run a hook after the n-th one. */
+  function counting(after?: { n: number; run: () => Promise<void> }): { db: D1Database; trips: () => number } {
+    let trips = 0
+    const hook = async <T>(v: T): Promise<T> => {
+      trips++
+      if (after && trips === after.n) await after.run()
+      return v
+    }
+    const wrapStmt = (st: D1PreparedStatement): D1PreparedStatement =>
+      new Proxy(st, {
+        get(target, prop) {
+          if (prop === 'bind') return (...a: unknown[]) => wrapStmt(target.bind(...a))
+          if (prop === 'first' || prop === 'all' || prop === 'run' || prop === 'raw') return async (...a: unknown[]) => hook(await (target as never as Record<string, (...x: unknown[]) => Promise<unknown>>)[prop as string]!(...a))
+          return Reflect.get(target, prop, target)
+        },
+      })
+    const db = new Proxy(env.DB, {
+      get(target, prop) {
+        if (prop === 'batch') return async (stmts: D1PreparedStatement[]) => hook(await target.batch(stmts))
+        if (prop === 'prepare') return (sql: string) => wrapStmt(target.prepare(sql))
+        const v = Reflect.get(target, prop, target)
+        return typeof v === 'function' ? v.bind(target) : v
+      },
+    })
+    return { db, trips: () => trips }
+  }
+  const q = (cookie: string, clientId = 'c1') => ({ cookie, clientId, afterMutationId: 0 })
+  /** The same store without the fast path: five sequential reads, the old behaviour. */
+  const sequential = (s: UserStore): UserStore => ({
+    userId: s.userId,
+    begin: (c) => s.begin(c),
+    readMeta: () => s.readMeta(),
+    rowsAfter: (a, l) => s.rowsAfter(a, l),
+    rowsAtVersion: (v) => s.rowsAtVersion(v),
+    getLastMutationId: (c) => s.getLastMutationId(c),
+    getMutationOutcome: (c, m) => s.getMutationOutcome(c, m),
+    listErrors: (c, a) => s.listErrors(c, a),
+  })
+
+  it('idle poll = 1 round trip, a page with rows = 2, a reset = 1 + 2 (the old path was 5 sequential reads)', async () => {
+    await seedLogs(30)
+    const idle = counting()
+    await pull(new D1Store(idle.db).forUser(userId), q('e1:30'), { minClientVersion: 1 })
+    expect(idle.trips()).toBe(1)
+    const page = counting()
+    const p = await pull(new D1Store(page.db).forUser(userId), q('e1:10'), { minClientVersion: 1 })
+    expect(p.changes.logs).toHaveLength(20)
+    expect(page.trips()).toBe(2)
+    const reset = counting()
+    const r = await pull(new D1Store(reset.db).forUser(userId), q('e9:5'), { minClientVersion: 1 })
+    expect(r.reset).toBe(true)
+    expect(r.changes.logs).toHaveLength(30)
+    expect(reset.trips()).toBe(3) // snapshot, then the two phases of rowsAfter(0)
+    const old = counting()
+    await pull(sequential(new D1Store(old.db).forUser(userId)), q('e1:10'), { minClientVersion: 1 })
+    expect(old.trips()).toBe(5)
+  })
+
+  it('answers exactly like the sequential reads: paging (page size 7), incremental, reset, errors, other client', async () => {
+    await pushOk(cookie, 'c1', upsertWeight(1, 'w1', 70, '2026-10-10'), mut(2, 'logs.restore@1', { id: 'nope' }), upsertWeight(3, 'w2', 71, '2026-10-11'))
+    await seedLogs(40, { firstVersion: 100 })
+    const fast = new D1Store(env.DB).forUser(userId)
+    const slow = sequential(fast)
+    for (const cookieQ of ['', '0', 'e1:2', 'e1:100', 'e1:139', 'e1:500', 'e2:1', 'junk']) {
+      for (const clientId of ['c1', 'other']) {
+        for (const afterMutationId of [0, 2]) {
+          const query = { cookie: cookieQ, clientId, afterMutationId }
+          expect(await pull(fast, query, { minClientVersion: 1, pageRows: 7 }), JSON.stringify(query)).toEqual(await pull(slow, query, { minClientVersion: 1, pageRows: 7 }))
+        }
+      }
+    }
+  })
+
+  it('a push committed between the snapshot batch and the rows batch: never claims a mutation without its rows, next pull catches up', async () => {
+    await pushOk(cookie, 'c1', upsertWeight(1, 'w1', 70, '2026-10-10'))
+    const base = new D1Store(env.DB).forUser(userId)
+    const inject = async () => {
+      await processPush(base, { actor: OWNER, now: Date.now }, { clientId: 'c1', mutations: [upsertWeight(2, 'w2', 71, '2026-10-11')] })
+    }
+    const c = counting({ n: 1, run: inject })
+    const p = await pull(new D1Store(c.db).forUser(userId), q('e1:0'), { minClientVersion: 1 })
+    expect(c.trips()).toBe(2)
+    expect(p.lastMutationId).toBe(1) // claimed from the snapshot, taken before the injected push
+    const ids = p.changes.weights.map((w) => w.id)
+    expect(ids).toContain('w1')
+    if (ids.includes('w2')) expect(p.cookie).toBe('e1:2') // the late row is delivered together with a cookie that covers it
+    const next = await get('clientId=c1&cookie=' + encodeURIComponent(p.cookie))
+    expect(next.lastMutationId).toBe(2)
+    expect([...new Set([...ids, ...next.changes.weights.map((w) => w.id)])].sort()).toEqual(['w1', 'w2'])
   })
 })

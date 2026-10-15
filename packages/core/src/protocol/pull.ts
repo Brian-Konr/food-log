@@ -2,8 +2,8 @@
 //   200：{ cookie, more, reset, lastMutationId, minClientVersion, changes:{…六張表}, errors:[本裝置的業務錯誤] }
 import type { ConfigRow, FavoriteRow, ItemRow, LogRow, StoreRow, WeightRow } from '../schema/rows'
 
-/** 每頁約 2,000 列（Workers 免費方案每個請求只有 10 ms CPU）。頁只在版本號之間切。 */
-export const PULL_PAGE_ROWS = 2000
+/** 每頁約 1,000 列（Workers 免費方案每個請求只有 10 ms CPU；真機實測 2,000 列一頁 6～10 ms 貼著上限，1,000 列留出餘裕）。頁只在版本號之間切。 */
+export const PULL_PAGE_ROWS = 1000
 
 export type Changes = {
   stores: StoreRow[]

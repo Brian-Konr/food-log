@@ -88,6 +88,30 @@ export interface ServerTx {
   commit(input: CommitInput): Promise<boolean>
 }
 
+/** pull 要的所有讀取，一次拿齊（見 UserStore.pullSnapshot）。 */
+export type PullSnapshotInput = {
+  clientId: string
+  afterMutationId: number
+  /** cookie 的 epoch；沒有 cookie（從頭開始）是 null。 */
+  epoch: string | null
+  /** cookie 的版本號。 */
+  afterVersion: number
+  /** rows 最多幾列（pull 傳 pageRows + 1）。 */
+  limit: number
+}
+
+export type PullSnapshot = {
+  lastMutationId: number
+  /** mutationId > afterMutationId 的業務錯誤（pull 會自己濾掉 > lastMutationId 的）。 */
+  errors: RecordedError[]
+  meta: { epoch: string; version: number }
+  /**
+   * version > afterVersion 的列（同 rowsAfter(afterVersion, limit)）。
+   * 這次 pull 需要 reset（epoch 不同、或 cookie 比伺服器新）時是 null：實作不必讀；pull 會改用 rowsAfter(0, …)。
+   */
+  rows: VersionedRow[] | null
+}
+
 /** 綁定一個使用者的儲存。所有方法都只看得到、只寫得到這個使用者的資料。 */
 export interface UserStore {
   readonly userId: string
@@ -109,6 +133,14 @@ export interface UserStore {
   getMutationOutcome(clientId: string, mutationId: number): Promise<MutationOutcome | undefined>
   /** 這台裝置 mutationId > afterMutationId 的業務錯誤，依 mutationId 遞增。 */
   listErrors(clientId: string, afterMutationId: number): Promise<RecordedError[]>
+  /**
+   * 選用的快速路徑：把 pull 的 getLastMutationId、listErrors、readMeta 和 rowsAfter 合成盡量少的往返（D1 版：cursor／錯誤／meta
+   * 在同一個 batch，列在第二個 batch，而且「cookie 已經是最新」時根本不讀列，閒置輪詢只要一個 batch）。
+   * 有實作時 pull 優先用它；沒有就走逐一讀取。語意必須和逐一讀取完全一樣：
+   *   cursor、錯誤、meta 取自同一個一致的快照（D1 的一個 batch 是一個原子快照，比逐一讀取更強，所以「先讀 cursor」的保證成立）；
+   *   列在它們之後讀（meta.version 以內的列一定已經提交）。
+   */
+  pullSnapshot?(input: PullSnapshotInput): Promise<PullSnapshot>
 }
 
 export interface ServerStore {
