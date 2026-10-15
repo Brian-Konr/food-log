@@ -1,0 +1,23 @@
+{
+  "name": "@food-log/ops",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "food-log v2 維運工具：restore-drill（把 R2 匯出檔還原到本機 SQLite 並比對列數與每日加總）",
+  "bin": {
+    "restore-drill": "./src/restore-drill.ts"
+  },
+  "scripts": {
+    "restore-drill": "node src/restore-drill.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@food-log/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
+  }
+}
