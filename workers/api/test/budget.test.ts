@@ -89,6 +89,22 @@ describe('D1 query budget (free plan: 50 per invocation)', () => {
     expect(stats.calls + SESSION_LOOKUP).toBeLessThan(50)
   })
 
+  it('worst case: 10 x logs.add that creates a new item in a store (the heaviest mutation) is 42 calls, still < 50', async () => {
+    await processPush(new D1Store(env.DB).forUser(userId), ctx, { clientId: 'seed', mutations: [mut(1, 'stores.upsert@1', storeArgs('s:1', '店'))] })
+    const { db, stats } = countingDb(env.DB)
+    const mutations = Array.from({ length: MAX_PUSH_MUTATIONS }, (_, i) =>
+      mut(i + 1, 'logs.add@1', {
+        log: logArgs('wl' + i, { item_id: 'u:n' + i, name: '新品' + i, src: '其他', store_id: 's:1' }),
+        item: itemArgs('u:n' + i, { store_id: 's:1', name: '新品' + i }),
+      }),
+    )
+    const out = await processPush(new D1Store(db).forUser(userId), ctx, { clientId: 'heavy', mutations })
+    expect(out.results.map((r) => r.ok)).toEqual(Array(10).fill(true))
+    // 1 cursor read + 1 begin batch + per mutation: 3 reads (stores s:1 once thanks to the Tx read cache, items, logs) + 1 commit batch
+    expect(stats.calls).toBe(42)
+    expect(stats.calls + SESSION_LOOKUP).toBeLessThan(50)
+  })
+
   it('replaying an already processed push costs one read per mutation (+1 for the cursor)', async () => {
     const mutations = Array.from({ length: 10 }, (_, i) => upsertWeight(i + 1, 'r' + i, 60 + i, `2026-08-${String(i + 1).padStart(2, '0')}`))
     await processPush(new D1Store(env.DB).forUser(userId), ctx, { clientId: 'dev', mutations })

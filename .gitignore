@@ -1,4 +1,7 @@
 node_modules/
+.wrangler/
+.dev.vars
+.dev.vars.*
 apps/*/dist/
 apps/food-log/screens/
 *.local

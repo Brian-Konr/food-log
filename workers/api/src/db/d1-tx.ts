@@ -10,12 +10,23 @@ export type BufferedWrite = { [T in Table]: { table: T; row: RowInput<T> } }[Tab
 
 export class D1Tx implements Tx {
   private pending: BufferedWrite[] = []
+  /**
+   * Reads are cached for the life of the Tx (callers get clones): nothing can change the answer in between, because the
+   * writes are buffered and a read after the first put() throws. logs.add with a new item in a store asks for the same
+   * store twice (once in the item plan, once in the log plan); caching keeps that to one D1 call (50-queries budget).
+   */
+  private cache = new Map<string, unknown>()
 
   constructor(
     private readonly db: D1Database,
     private readonly userId: string,
     private readonly now: () => number = Date.now,
   ) {}
+
+  private async cached<V>(key: string, load: () => Promise<V>): Promise<V> {
+    if (!this.cache.has(key)) this.cache.set(key, await load())
+    return structuredClone(this.cache.get(key)) as V
+  }
 
   private assertNoWrites(op: string): void {
     if (this.pending.length > 0) {
@@ -25,46 +36,53 @@ export class D1Tx implements Tx {
 
   async get<T extends Table>(t: T, id: string): Promise<Row<T> | undefined> {
     this.assertNoWrites(`get ${t}`)
-    const where = t === 'config' ? 'user_id = ?' : `user_id = ? AND ${PK[t][0]} = ?`
-    const stmt = this.db.prepare(`SELECT ${selectList(t)} FROM ${t} WHERE ${where}`)
-    const r = await (t === 'config' ? stmt.bind(this.userId) : stmt.bind(this.userId, id)).first<Record<string, unknown>>()
-    return r ? fromDb(t, r) : undefined
+    return this.cached(`get:${t}:${t === 'config' ? '' : id}`, async () => {
+      const where = t === 'config' ? 'user_id = ?' : `user_id = ? AND ${PK[t][0]} = ?`
+      const stmt = this.db.prepare(`SELECT ${selectList(t)} FROM ${t} WHERE ${where}`)
+      const r = await (t === 'config' ? stmt.bind(this.userId) : stmt.bind(this.userId, id)).first<Record<string, unknown>>()
+      return r ? fromDb(t, r) : undefined
+    })
   }
 
   async liveWeightOnDay(day: string): Promise<WeightRow | undefined> {
     this.assertNoWrites('liveWeightOnDay')
-    const r = await this.db
-      .prepare(`SELECT ${selectList('weights')} FROM weights WHERE user_id = ? AND day = ? AND deleted_at IS NULL`)
-      .bind(this.userId, day)
-      .first<Record<string, unknown>>()
-    return r ? fromDb('weights', r) : undefined
+    return this.cached(`weightOnDay:${day}`, async () => {
+      const r = await this.db
+        .prepare(`SELECT ${selectList('weights')} FROM weights WHERE user_id = ? AND day = ? AND deleted_at IS NULL`)
+        .bind(this.userId, day)
+        .first<Record<string, unknown>>()
+      return r ? fromDb('weights', r) : undefined
+    })
   }
 
   async liveStoreByNorm(norm: string, exceptId?: string): Promise<StoreRow | undefined> {
     this.assertNoWrites('liveStoreByNorm')
-    const r = await this.db
-      .prepare(`SELECT ${selectList('stores')} FROM stores WHERE user_id = ? AND name_norm = ? AND deleted_at IS NULL AND id <> ?`)
-      .bind(this.userId, norm, exceptId ?? '')
-      .first<Record<string, unknown>>()
-    return r ? fromDb('stores', r) : undefined
+    return this.cached(`storeByNorm:${norm}\u0000${exceptId ?? ''}`, async () => {
+      const r = await this.db
+        .prepare(`SELECT ${selectList('stores')} FROM stores WHERE user_id = ? AND name_norm = ? AND deleted_at IS NULL AND id <> ?`)
+        .bind(this.userId, norm, exceptId ?? '')
+        .first<Record<string, unknown>>()
+      return r ? fromDb('stores', r) : undefined
+    })
   }
 
   async itemsOfStore(storeId: string): Promise<ItemRow[]> {
     this.assertNoWrites('itemsOfStore')
-    const rs = await this.db
-      .prepare(`SELECT ${selectList('items')} FROM items WHERE user_id = ? AND store_id = ? ORDER BY id`)
-      .bind(this.userId, storeId)
-      .all<Record<string, unknown>>()
-    return rs.results.map((r) => fromDb('items', r))
+    return this.cached(`itemsOfStore:${storeId}`, async () => {
+      const rs = await this.db
+        .prepare(`SELECT ${selectList('items')} FROM items WHERE user_id = ? AND store_id = ? ORDER BY id`)
+        .bind(this.userId, storeId)
+        .all<Record<string, unknown>>()
+      return rs.results.map((r) => fromDb('items', r))
+    })
   }
 
   async getConfig(): Promise<ConfigRow> {
     this.assertNoWrites('getConfig')
-    const r = await this.db
-      .prepare(`SELECT ${selectList('config')} FROM config WHERE user_id = ?`)
-      .bind(this.userId)
-      .first<Record<string, unknown>>()
-    return r ? fromDb('config', r) : defaultConfigRow(this.userId, taipeiIso(this.now()))
+    return this.cached('config', async () => {
+      const r = await this.db.prepare(`SELECT ${selectList('config')} FROM config WHERE user_id = ?`).bind(this.userId).first<Record<string, unknown>>()
+      return r ? fromDb('config', r) : defaultConfigRow(this.userId, taipeiIso(this.now()))
+    })
   }
 
   put<T extends Table>(t: T, row: RowInput<T>): void {
