@@ -266,6 +266,35 @@ describe('POST /bot/v1/mutate', () => {
     expect(botRow.last_mutation_id).toBe(3)
   })
 
+  it('bot outcome rows (ok and error) are pruned to the newest 200 per key; app error rows are not', async () => {
+    const { key: k2, id } = await mintBotKey(userId)
+    const clientId = 'bot:' + id
+    const ins = env.DB.prepare(
+      `INSERT INTO mutation_outcomes (user_id, client_id, mutation_id, ok, name, result, error, message, details, at) VALUES (?, ?, ?, ?, 'weights.upsert@1', ?, ?, ?, NULL, 'x')`,
+    )
+    const seed = (cid: string, n: number) =>
+      Array.from({ length: n }, (_, i) => {
+        const ok = i % 2 === 0 ? 1 : 0
+        return ins.bind(userId, cid, i + 1, ok, ok ? 'null' : null, ok ? null : 'bad_record', ok ? null : 'old error')
+      })
+    await env.DB.batch([
+      ...seed(clientId, 300),
+      ...seed('api-owner', 300),
+      env.DB.prepare(`INSERT INTO sync_clients (user_id, client_id, last_mutation_id, last_seen_at) VALUES (?, ?, 300, 'x'), (?, 'api-owner', 300, 'x')`).bind(userId, clientId, userId),
+    ])
+    // a business error from the bot (kg out of range): recorded as outcome 301 and the old rows fall out of the window
+    const bad = await call('/bot/v1/mutate', { method: 'POST', bearer: k2, json: { name: 'weights.upsert@1', args: weightArgs('wbad', 5, day(1)) } })
+    expect(bad.status).toBe(400)
+    const q = async (cid: string) =>
+      (await env.DB.prepare(`SELECT COUNT(*) AS n, MIN(mutation_id) AS lo, MAX(mutation_id) AS hi, SUM(ok = 0) AS errs FROM mutation_outcomes WHERE client_id = ?`).bind(cid).first<{ n: number; lo: number; hi: number; errs: number }>())!
+    expect(await q(clientId)).toMatchObject({ n: 200, lo: 102, hi: 301 })
+    expect((await q(clientId)).errs).toBeGreaterThan(90) // error rows are inside the window, and the new error is kept
+    expect((await env.DB.prepare(`SELECT ok FROM mutation_outcomes WHERE client_id = ? AND mutation_id = 301`).bind(clientId).first<{ ok: number }>())!.ok).toBe(0)
+    // the app device keeps all its error rows (they are handed back on pull)
+    await pushOk(cookie, 'api-owner', mut(301, 'weights.upsert@1', weightArgs('wbad', 5, day(1))), mut(302, 'favorites.set@1', { item_id: 'fm:1', fav: true }))
+    expect(await q('api-owner')).toMatchObject({ n: 302 - 51, errs: 151 }) // only old ok rows were pruned
+  })
+
   it('concurrent mutates: nobody is answered with another request\'s result, nothing is double applied', async () => {
     const send = (i: number) => bot('weights.upsert@1', weightArgs('wc' + i, 60 + i, day(20 + i)))
     const rs = await Promise.all(Array.from({ length: 6 }, (_, i) => send(i)))

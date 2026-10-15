@@ -28,7 +28,7 @@ import type { MutationOutcome, PushResult, RecordedError, ServerTx, UserStore } 
 import { NO_ORIGIN } from '../app-env.ts'
 import type { AppEnv } from '../app-env.ts'
 import { authFor, bearerOf, verifyBotKey } from '../auth.ts'
-import { D1Store } from '../db/d1-store.ts'
+import { BOT_CLIENT_PREFIX, D1Store } from '../db/d1-store.ts'
 
 /** Same window as v1: Logs 35 days back (inclusive of today), Weights 90 days. */
 export const BOT_LOG_DAYS = 35
@@ -271,7 +271,7 @@ botRoutes.openapi(historyRoute, async (c) => {
 botRoutes.openapi(mutateRoute, async (c) => {
   const { name, args } = c.req.valid('json')
   const base = userStore(c)
-  const clientId = `bot:${c.get('bot').keyId}`
+  const clientId = `${BOT_CLIENT_PREFIX}${c.get('bot').keyId}`
   const now = Date.now()
   for (let attempt = 0; attempt < 5; attempt++) {
     const cursor = await base.getLastMutationId(clientId)

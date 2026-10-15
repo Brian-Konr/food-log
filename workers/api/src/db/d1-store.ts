@@ -106,6 +106,9 @@ export class D1Store implements ServerStore {
   }
 }
 
+/** clientId prefix of the Kyujin key's own device (routes/bot.ts). */
+export const BOT_CLIENT_PREFIX = 'bot:'
+
 class D1ServerTx implements ServerTx {
   readonly tx: D1Tx
 
@@ -160,8 +163,17 @@ class D1ServerTx implements ServerTx {
           err?.at ?? stamp,
         ),
     )
-    if (input.ok) {
-      // keep only the newest MUTATION_OUTCOME_RETENTION successful results per device; business errors are never pruned
+    if (clientId.startsWith(BOT_CLIENT_PREFIX)) {
+      // Bot clientIds (`bot:<keyId>`) are never pulled, so nobody would ever consume their recorded errors: same retention
+      // as ok rows (newest MUTATION_OUTCOME_RETENTION per key), whatever `ok` is. Pruned on error commits too.
+      stmts.push(
+        db
+          .prepare(`DELETE FROM mutation_outcomes WHERE user_id = ? AND client_id = ? AND mutation_id <= ?`)
+          .bind(userId, clientId, input.mutationId - MUTATION_OUTCOME_RETENTION),
+      )
+    } else if (input.ok) {
+      // keep only the newest MUTATION_OUTCOME_RETENTION successful results per device; app business errors are never pruned
+      // (they are handed back to the device on pull)
       stmts.push(
         db
           .prepare(`DELETE FROM mutation_outcomes WHERE user_id = ? AND client_id = ? AND ok = 1 AND mutation_id <= ?`)

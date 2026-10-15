@@ -41,6 +41,7 @@ CREATE TABLE sync_clients (
 -- What was answered for each processed mutation, so a lost-response replay gets the ORIGINAL answer:
 --   ok = 1  the mutator's result (JSON in `result`); only the newest 200 per device are kept (pruned in the commit batch)
 --   ok = 0  the business error (error / message / details); kept, never pruned, and handed back to the device on pull
+--           (exception: `bot:*` clients are never pulled, so their rows, ok or error, share the newest-200 window)
 CREATE TABLE mutation_outcomes (
   user_id     TEXT NOT NULL,
   client_id   TEXT NOT NULL,
