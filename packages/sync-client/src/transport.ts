@@ -17,10 +17,13 @@ export class NetworkError extends Error {
 
 export class HttpError extends Error {
   readonly status: number
-  constructor(status: number) {
+  /** 伺服器回應 body 裡的訊息（有的話；給 4xx 的「壞請求」顯示用）。 */
+  readonly serverMessage: string | undefined
+  constructor(status: number, serverMessage?: string) {
     super(`API-${status}`)
     this.name = 'HttpError'
     this.status = status
+    this.serverMessage = serverMessage
   }
 }
 
@@ -98,7 +101,11 @@ export class FetchTransport implements Transport {
         if (body?.error === 'client_too_old') throw new TooOldError(typeof body.minClientVersion === 'number' ? body.minClientVersion : null)
         throw new HttpError(409)
       }
-      if (!res.ok) throw new HttpError(res.status)
+      if (!res.ok) {
+        const body = await readJson<{ message?: unknown; error?: unknown }>(res, ctl.signal).catch(() => null)
+        const msg = typeof body?.message === 'string' ? body.message : typeof body?.error === 'string' ? body.error : undefined
+        throw new HttpError(res.status, msg)
+      }
       return await readJson<T>(res, ctl.signal)
     } finally {
       clearTimeout(timer)

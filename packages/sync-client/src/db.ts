@@ -8,7 +8,7 @@
 //   <table>       畫面讀的內容 = srv_<table> + 重播還沒確認的 pending
 //   pending       待送的 mutation：{ mutationId, name, args, clientTs, touched[] }
 //   failed        業務錯誤，給 UI 重試或捨棄
-//   meta          { key, value }：clientId、nextMutationId、cookie、lastMutationId、userId、mode、lastPullAt
+//   meta          { key, value }：clientId、nextMutationId、cookie、lastMutationId、userId、mode、lastPullAt、pullRun（多頁 pull 進行中：{reset, dirty[]}）
 //
 // touched 的格式是 `<table>:<主鍵>`（例如 `logs:abc`、`stores:s:1`、`config:config`）。`pending.touched` 是 multiEntry 索引，
 // usePendingKeys 靠它知道「哪些列還沒被伺服器確認」；rebase 靠它算髒鍵。
@@ -53,7 +53,7 @@ export interface MetaRow {
   value: unknown
 }
 
-export type MetaKey = 'clientId' | 'nextMutationId' | 'cookie' | 'lastMutationId' | 'userId' | 'mode' | 'lastPullAt'
+export type MetaKey = 'clientId' | 'nextMutationId' | 'cookie' | 'lastMutationId' | 'userId' | 'mode' | 'lastPullAt' | 'pullRun'
 
 type Rows = { [T in Table]: Row<T> }
 type AnyTable = DexieTable<unknown, string>

@@ -31,6 +31,16 @@ describe('FetchTransport', () => {
     expect(init).toMatchObject({ method: 'GET', credentials: 'include' })
   })
 
+  it('4xx：HttpError 帶伺服器 body 裡的訊息（message 優先，其次 error）；body 不是 JSON 就沒有', async () => {
+    const mk = (r: () => Response) => new FetchTransport({ fetch: (async () => r()) as unknown as typeof fetch })
+    const e1 = await mk(() => res(400, { error: 'bad_request', message: '欄位不對' })).push({ clientId: 'c', mutations: [] }).catch((e: unknown) => e)
+    expect(e1).toMatchObject({ name: 'HttpError', status: 400, serverMessage: '欄位不對', message: 'API-400' })
+    const e2 = await mk(() => res(422, { error: 'invalid' })).push({ clientId: 'c', mutations: [] }).catch((e: unknown) => e)
+    expect((e2 as HttpError).serverMessage).toBe('invalid')
+    const e3 = await mk(() => new Response('<html>', { status: 400 })).push({ clientId: 'c', mutations: [] }).catch((e: unknown) => e)
+    expect(e3).toMatchObject({ name: 'HttpError', status: 400, serverMessage: undefined })
+  })
+
   const cases: [string, () => Response | Promise<Response>, (e: unknown) => void][] = [
     ['401 → AuthError', () => res(401), (e) => expect(e).toBeInstanceOf(AuthError)],
     [
