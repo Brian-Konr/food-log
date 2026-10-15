@@ -20,7 +20,7 @@ export const noonOf = (day: string, hhmm = '12:00'): string => `${day}T${hhmm}:0
 // ---- mutation 參數 ----
 
 /** 一般品項的紀錄（item_id 非空）。 */
-export function logArgs(over: Partial<LogInput> = {}): LogInput {
+export function logArgs(over: Partial<LogInput> | Record<string, unknown> = {}): LogInput {
   return {
     id: 'log-1',
     ts: noonOf(TEST_YESTERDAY),
@@ -34,12 +34,12 @@ export function logArgs(over: Partial<LogInput> = {}): LogInput {
     protein: 20.8,
     fat: 1.5,
     carb: 2.3,
-    ...over,
+    ...(over as Partial<LogInput>),
   }
 }
 
 /** 快速記錄。 */
-export function quickLogArgs(over: Partial<LogInput> = {}): LogInput {
+export function quickLogArgs(over: Partial<LogInput> | Record<string, unknown> = {}): LogInput {
   return logArgs({
     id: 'q1',
     item_id: '',
@@ -52,11 +52,11 @@ export function quickLogArgs(over: Partial<LogInput> = {}): LogInput {
     fat: 10,
     carb: 40,
     source: 'quick',
-    ...over,
+    ...(over as Partial<LogInput>),
   })
 }
 
-export function itemArgs(over: Partial<ItemInput> = {}): ItemInput {
+export function itemArgs(over: Partial<ItemInput> | Record<string, unknown> = {}): ItemInput {
   return {
     id: 'u:item-1',
     kind: '自建',
@@ -71,16 +71,16 @@ export function itemArgs(over: Partial<ItemInput> = {}): ItemInput {
     carb: 2,
     store_id: null,
     ts: noonOf(TEST_YESTERDAY),
-    ...over,
+    ...(over as Partial<ItemInput>),
   }
 }
 
-export function storeArgs(over: Partial<StoresUpsertArgs> = {}): StoresUpsertArgs {
-  return { id: 's:1', name: '阿財牛肉麵', ts: noonOf(TEST_YESTERDAY), ...over }
+export function storeArgs(over: Partial<StoresUpsertArgs> | Record<string, unknown> = {}): StoresUpsertArgs {
+  return { id: 's:1', name: '阿財牛肉麵', ts: noonOf(TEST_YESTERDAY), ...(over as Partial<StoresUpsertArgs>) }
 }
 
-export function weightArgs(over: Partial<WeightsUpsertArgs> = {}): WeightsUpsertArgs {
-  return { id: 'w1', day: TEST_YESTERDAY, kg: 72.0, ts: noonOf(TEST_YESTERDAY, '08:00'), ...over }
+export function weightArgs(over: Partial<WeightsUpsertArgs> | Record<string, unknown> = {}): WeightsUpsertArgs {
+  return { id: 'w1', day: TEST_YESTERDAY, kg: 72.0, ts: noonOf(TEST_YESTERDAY, '08:00'), ...(over as Partial<WeightsUpsertArgs>) }
 }
 
 // ---- 資料列（直接放進 MemoryDb.seed）----
