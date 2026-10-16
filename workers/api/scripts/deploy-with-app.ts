@@ -1,6 +1,8 @@
-// `pnpm run deploy:with-app`: deploy the Worker TOGETHER with the PWA (apps/food-log/dist as static assets).
-// RESERVED for after Phase 2 rewires the app to /sync: it refuses while apps/food-log still contains src/api/gas.ts
-// (the v1 Apps Script client), so the v1 frontend can never be published from this Worker by accident.
+// `pnpm run deploy` (= `pnpm run deploy:with-app`): THE way to deploy. Ships the Worker TOGETHER with the PWA
+// (apps/food-log/dist as static assets). There is no API-only deploy any more: wrangler.jsonc has no `assets`, so a
+// plain `wrangler deploy` from it would remove the live frontend. Never run `wrangler deploy` by hand.
+// The guard still refuses if apps/food-log ever contains src/api/gas.ts again (the v1 Apps Script client), so the v1
+// frontend can never be published from this Worker by accident.
 //
 //   node scripts/deploy-with-app.ts            checks, then typecheck + test + build + migrate + deploy
 //   node scripts/deploy-with-app.ts --check    only run the guard
@@ -24,7 +26,7 @@ export const V1_CLIENT = path.join('apps', 'food-log', 'src', 'api', 'gas.ts')
 /** null when the app may ship, else the reason it may not. */
 export function guard(repoRoot: string): string | null {
   if (existsSync(path.join(repoRoot, V1_CLIENT))) {
-    return `refusing: ${V1_CLIENT} still exists, so apps/food-log is the v1 frontend (Apps Script client). Phase 2 must rewire the app to /sync and delete that file before the app can be deployed with the Worker. Use \`pnpm run deploy\` for the API only.`
+    return `refusing: ${V1_CLIENT} still exists, so apps/food-log is the v1 frontend (Apps Script client). The app must talk to /sync and that file must be gone before anything is deployed.`
   }
   return null
 }

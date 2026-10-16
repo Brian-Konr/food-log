@@ -1,14 +1,15 @@
 {
-  // food-log v2 Worker: API + cron export (+ the PWA as static assets once Phase 2 lands, see deploy:with-app). Nothing here is a secret.
+  // food-log v2 Worker: API + cron export + the PWA as static assets. Nothing here is a secret.
   "name": "food-log",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
 
-  // API ONLY, no static assets: `pnpm run deploy` ships just the Worker. The apps/food-log frontend is still v1
-  // (src/api/gas.ts talks to Apps Script) and must not be published here. `pnpm run deploy:with-app`
-  // (scripts/deploy-with-app.ts) adds the PWA assets (apps/food-log/dist, SPA fallback, Worker first on the API paths)
-  // to a generated copy of this file, and refuses until apps/food-log no longer contains src/api/gas.ts (Phase 2).
+  // DEPLOY ONLY WITH `pnpm run deploy` (or its alias `deploy:with-app`), never a plain `wrangler deploy`.
+  // This file has no `assets` on purpose (wrangler dev, d1 and the ops scripts read it and must not need a built
+  // apps/food-log/dist), so a plain `wrangler deploy` would ship the Worker WITHOUT the frontend and take the live
+  // PWA down. scripts/deploy-with-app.ts builds the app and deploys a generated copy of this file with the assets
+  // added (apps/food-log/dist, SPA fallback, Worker first on the API paths); `--var` / `--message` go through it too.
 
   "d1_databases": [
     {

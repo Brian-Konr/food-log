@@ -1,14 +1,16 @@
-// wrangler.jsonc is the deploy contract: the default deploy ships the API only, with the two export crons and the telemetry limiter.
+// wrangler.jsonc + the deploy scripts are the deploy contract: every deploy goes through scripts/deploy-with-app.ts
+// (Worker + PWA assets), with the two export crons and the telemetry limiter.
 import { describe, expect, it } from 'vitest'
 import { EXPORT_CRON, EXPORT_RESUME_CRON } from '../src/cron/export.ts'
 import { stripJsonc } from '../scripts/_jsonc.ts'
 import raw from '../wrangler.jsonc?raw'
 import pkg from '../package.json'
+import rootPkg from '../../../package.json'
 
 const cfg = JSON.parse(stripJsonc(raw)) as Record<string, any>
 
 describe('wrangler.jsonc', () => {
-  it('has NO static assets: `pnpm run deploy` must not ship the still-v1 frontend', () => {
+  it('has no static assets itself (wrangler dev / d1 / ops scripts must not need a built dist); deploy-with-app.ts adds them', () => {
     expect(cfg).not.toHaveProperty('assets')
   })
 
@@ -26,10 +28,14 @@ describe('wrangler.jsonc', () => {
 })
 
 describe('deploy scripts', () => {
-  it('deploy is API only (no web build, no assets); deploy:with-app goes through the guard script', () => {
+  it('there is no API-only deploy: deploy and deploy:with-app both go through deploy-with-app.ts (a plain wrangler deploy drops the PWA)', () => {
     const s = pkg.scripts as Record<string, string>
-    expect(s.deploy).not.toMatch(/build:web|assets/)
-    expect(s.deploy).toMatch(/wrangler deploy$/)
+    expect(s.deploy).toBe('node scripts/deploy-with-app.ts')
     expect(s['deploy:with-app']).toBe('node scripts/deploy-with-app.ts')
+    for (const [name, cmd] of Object.entries(s)) expect(cmd, name).not.toMatch(/wrangler (versions )?deploy/)
+  })
+
+  it('the root deploy script delegates to the api package deploy', () => {
+    expect((rootPkg.scripts as Record<string, string>).deploy).toBe('pnpm --filter @food-log/api run deploy')
   })
 })

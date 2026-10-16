@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "food-log v2 Worker：Hono + Better Auth（passkey / 登入碼 / Bot API key）+ D1（CAS batch）+ R2 每日匯出 （前端靜態檔只在 deploy:with-app）",
+  "description": "food-log v2 Worker：Hono + Better Auth（passkey / 登入碼 / Bot API key）+ D1（CAS batch）+ R2 每日匯出 （deploy 與 deploy:with-app 都同時部署前端靜態檔）",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
@@ -11,7 +11,7 @@
     "db:migrate:local": "wrangler d1 migrations apply food-log --local",
     "db:migrate:remote": "wrangler d1 migrations apply food-log --remote",
     "build:web": "pnpm --filter @food-log/app build",
-    "deploy": "pnpm -r typecheck && pnpm -r test && wrangler d1 migrations apply food-log --remote && wrangler deploy",
+    "deploy": "node scripts/deploy-with-app.ts",
     "deploy:with-app": "node scripts/deploy-with-app.ts"
   },
   "dependencies": {
