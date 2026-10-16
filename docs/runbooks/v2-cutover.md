@@ -357,7 +357,7 @@ exports/<DAY>/logs.part-N.csv       只有 part 1 有 BOM 與表頭
 - [ ] 至少一次還原演練 OK，每日匯出連續成功
 - [ ] 新網址的登入、passkey、離線記錄、同步都在 iPhone 主畫面 PWA 試過
 - [ ] 回滾演練做過一次並計時（第四節），知道 30 分鐘怎麼分配
-- [ ] `v1-final` 要打 tag 的 `main` 已含 v1 唯讀開關（`READ_ONLY`，且已部署到 GAS，預設關閉）
+- [x] `v1-final` 要打 tag 的 `main` 已含 v1 唯讀開關（`READ_ONLY`，且已部署到 GAS，預設關閉）：2026-10-16 從 `main` `53b2715` 部署了 GAS 新版本與 GitHub Pages（`gh-pages` `ad0ae84`）。`main` 之後若再有 v1 改動，兩者都要重新部署
 - [ ] 導向版本（第 6 步）已在 `main` 衍生的暫時分支上備妥並審過
 - [ ] Kyujin 的新設定（新網址、新 key 的存放位置）已準備好
 - [ ] 記下正式環境現在跑的 commit（回滾步驟 A 要在同一個 commit 上部署）：每次部署後跑 `git rev-parse HEAD` 記在切換日筆記
