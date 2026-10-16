@@ -344,6 +344,7 @@ exports/<DAY>/logs.part-N.csv       只有 part 1 有 BOM 與表頭
 
 | 日期 | 匯出日 `DAY` | 結果（OK／MISMATCH／refused） | 耗時 | 備註 |
 |---|---|---|---|---|
+| 2026-10-16 | 2026-10-16 | OK | 0.01 s | 第一次匯出（試匯入後）；version 5..5，consistent，attempts 1；7 個 part 檔 |
 | | | | | |
 
 ---
