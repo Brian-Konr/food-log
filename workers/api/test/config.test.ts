@@ -1,5 +1,6 @@
-// wrangler.jsonc + the deploy scripts are the deploy contract: every deploy goes through scripts/deploy-with-app.ts
-// (Worker + PWA assets), with the two export crons and the telemetry limiter.
+// wrangler.jsonc + the deploy scripts are the deploy contract: the config itself carries the PWA assets (so no deploy can
+// drop the frontend), every scripted deploy goes through scripts/deploy-with-app.ts, plus the two export crons and the
+// telemetry limiter.
 import { describe, expect, it } from 'vitest'
 import { EXPORT_CRON, EXPORT_RESUME_CRON } from '../src/cron/export.ts'
 import { stripJsonc } from '../scripts/_jsonc.ts'
@@ -10,8 +11,13 @@ import rootPkg from '../../../package.json'
 const cfg = JSON.parse(stripJsonc(raw)) as Record<string, any>
 
 describe('wrangler.jsonc', () => {
-  it('has no static assets itself (wrangler dev / d1 / ops scripts must not need a built dist); deploy-with-app.ts adds them', () => {
-    expect(cfg).not.toHaveProperty('assets')
+  it('declares the PWA assets itself, so even a plain `wrangler deploy` ships (or refuses without) the frontend', () => {
+    expect(cfg.assets).toEqual({
+      directory: '../../apps/food-log/dist',
+      binding: 'ASSETS',
+      not_found_handling: 'single-page-application',
+      run_worker_first: ['/sync/*', '/bot/*', '/api/*', '/telemetry/*'],
+    })
   })
 
   it('registers the export start cron and the 5-minute resume cron, within the free plan limit of 5', () => {
@@ -28,11 +34,15 @@ describe('wrangler.jsonc', () => {
 })
 
 describe('deploy scripts', () => {
-  it('there is no API-only deploy: deploy and deploy:with-app both go through deploy-with-app.ts (a plain wrangler deploy drops the PWA)', () => {
+  it('deploy and deploy:with-app both go through deploy-with-app.ts (guard, checks, fresh web build, migrations)', () => {
     const s = pkg.scripts as Record<string, string>
     expect(s.deploy).toBe('node scripts/deploy-with-app.ts')
     expect(s['deploy:with-app']).toBe('node scripts/deploy-with-app.ts')
     for (const [name, cmd] of Object.entries(s)) expect(cmd, name).not.toMatch(/wrangler (versions )?deploy/)
+  })
+
+  it('dev builds the web first (wrangler dev needs the assets directory)', () => {
+    expect((pkg.scripts as Record<string, string>).dev).toBe('pnpm run build:web && wrangler dev --local')
   })
 
   it('the root deploy script delegates to the api package deploy', () => {

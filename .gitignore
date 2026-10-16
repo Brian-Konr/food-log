@@ -10,7 +10,6 @@ docs/plans/*.log
 /qa-v1/
 /design/
 /clasp/
-workers/api/wrangler.with-app.generated.json
 
 # v2 migration / ops tools: real (private) food data never goes in git
 tools/*/out/

@@ -25,7 +25,7 @@
 - **所有指令都從 v2 checkout 的根目錄執行**（Brian 的電腦上是 `~/Documents/personal/GitHub/food-log-v2`）。需要別的目錄時，區塊裡會自己寫 `cd`。
 - 一個區塊一個指令（或一組必須一起跑的指令），原樣貼上即可。區塊裡**沒有 `#` 註解**：zsh 預設不把貼上的 `#` 當註解，會變成指令的參數。
 - pnpm 沒有全域安裝，一律 `npx -y pnpm@10 …`；wrangler 一律 `npx -y pnpm@10 --filter @food-log/api exec wrangler …`（它會在 `workers/api/` 執行，讀那裡的 `wrangler.jsonc`，所以檔案路徑一律用絕對路徑）。D1 叫 `food-log`、R2 bucket 叫 `food-log-exports`。
-- **部署一律用 `deploy:with-app`**（Worker + 前端）。`run deploy` 現在是同一支腳本（`scripts/deploy-with-app.ts`）的別名，也會帶前端。**不要直接跑 `wrangler deploy`**：`wrangler.jsonc` 本身不含靜態檔，直接部署會把已經上線的前端拿掉；要改 vars 就用 `deploy:with-app --var KEY:VALUE`。
+- **部署一律用 `deploy:with-app`**（`run deploy` 是同一支腳本 `scripts/deploy-with-app.ts` 的別名）：守門 → typecheck → 測試 → 重新 build 前端 → D1 migrations → `wrangler deploy`。**不要直接跑 `wrangler deploy`**：前端的 assets 寫在 `wrangler.jsonc` 裡，沒有 build 過會被拒絕，有舊的 `dist` 會把舊前端部署上去，而且會略過測試與 migrations。要改 vars 就用 `deploy:with-app --var KEY:VALUE`。腳本對旗標很嚴格：打錯字（例如 `--dryrun`）、`--var` 沒有值都會直接報錯，不會部署。
 - 秘密只用互動輸入（`read -rs`）或用管線直接送進 `wrangler secret put`，不寫進檔案、不貼進聊天。
 - 下文用到的 shell 變數（`OWNER_EMAIL`、`OWNER_USER_ID`、`GAS_URL`、`GAS_SECRET`、`DAY`、`DRILL_DIR`）**只在當下這個終端機視窗有效**；開新視窗要重新設定（照下面 0.1–0.3 或該步驟的指令）。
 
@@ -586,6 +586,12 @@ git show --no-patch v1-final
 
    ```bash
    npx -y pnpm@10 --filter @food-log/api run deploy:with-app --var MIN_CLIENT_VERSION:9999 --message "rollback: block push"
+   ```
+
+   如果部署卡在和這次無關的測試失敗（例如前端某個測試不穩），而正式環境的 commit 已經有 `--skip-checks`（2026-10-16 之後的 commit），可以加上它跳過 typecheck 與測試；前端照樣會重新 build 並一起部署：
+
+   ```bash
+   npx -y pnpm@10 --filter @food-log/api run deploy:with-app --skip-checks --var MIN_CLIENT_VERSION:9999 --message "rollback: block push"
    ```
 
    回滾結束、要重新開放 v2 時，用正常的部署回到 `"1"`（`wrangler.jsonc` 裡的值沒有被改）：

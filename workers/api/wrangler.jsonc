@@ -5,17 +5,25 @@
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
 
-  // DEPLOY ONLY WITH `pnpm run deploy` (or its alias `deploy:with-app`), never a plain `wrangler deploy`.
-  // This file has no `assets` on purpose (wrangler dev, d1 and the ops scripts read it and must not need a built
-  // apps/food-log/dist), so a plain `wrangler deploy` would ship the Worker WITHOUT the frontend and take the live
-  // PWA down. scripts/deploy-with-app.ts builds the app and deploys a generated copy of this file with the assets
-  // added (apps/food-log/dist, SPA fallback, Worker first on the API paths); `--var` / `--message` go through it too.
+  // Deploy with `pnpm run deploy` (or its alias `deploy:with-app`): scripts/deploy-with-app.ts runs the guard, typecheck,
+  // tests, a fresh web build and the remote migrations before `wrangler deploy`. The PWA assets are declared right here,
+  // so a plain `wrangler deploy` cannot ship the Worker without them: with no apps/food-log/dist it refuses (it would ship a
+  // stale dist if one is lying around, which is why the script rebuilds first). d1 / secret / r2 / tail commands do not
+  // need the dist; `wrangler dev` does (the dev script builds it).
+  "assets": {
+    "directory": "../../apps/food-log/dist",
+    "binding": "ASSETS",
+    // hash routes (#today, #weight, ...) all live on /, but any unknown path still gets the app shell
+    "not_found_handling": "single-page-application",
+    // the API paths always reach the Worker, never the SPA fallback
+    "run_worker_first": ["/sync/*", "/bot/*", "/api/*", "/telemetry/*"]
+  },
 
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "food-log",
-      // printed by `wrangler d1 create food-log` on 2026-10-16 (APAC; not a secret). Local dev and tests use wrangler.test.jsonc / --local.
+      // printed by `wrangler d1 create food-log` on 2026-10-16 (APAC; not a secret). Tests use wrangler.test.jsonc; `--local` commands use a local copy.
       "database_id": "063b042c-76a4-4e2e-9707-9f869f5080d3",
       "migrations_dir": "migrations"
     }
